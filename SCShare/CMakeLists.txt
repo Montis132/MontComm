@@ -1,5 +1,5 @@
 ############################## project name #################################
-project(QXSCShare)
+project(SCShare)
 ########################### cmake version need ##############################
 cmake_minimum_required(VERSION 3.0)
 ########################## project directories ##############################
@@ -8,8 +8,8 @@ set(THIRD_PARTY_ROOT ${BUILD_ROOT}/../third_party)
 set(UTILS_ROOT ${BUILD_ROOT}/../utils)
 ################################ src files ##################################
 set(SOURCES
-    QXSCMsg.pb.cc
-    QXSCShareCommon.cpp
+    SCMsg.pb.cc
+    SCShareCommon.cpp
 )
 find_package(Protobuf REQUIRED)
 ############################# include dir ###################################

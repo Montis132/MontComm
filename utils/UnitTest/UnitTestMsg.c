@@ -1,6 +1,6 @@
 #include "UnitTest.h"
-#include "QXUtilsMsg.h"
-#include "QXUtilsMem.h"
+#include "UtilsMsg.h"
+#include "UtilsMem.h"
 
 #define UT_MSG_SOCKET_PORT                                      20000
 #define UT_MSG_HEAD_TYPE                                        132
@@ -14,7 +14,7 @@ _UT_Msg_PreInit(
     void
     )
 {
-    return QXUtil_MemModuleInit();
+    return Util_MemModuleInit();
 }
 
 static int
@@ -22,7 +22,7 @@ _UT_Msg_FinExit(
     void
     )
 {
-    return QXUtil_MemModuleExit();
+    return Util_MemModuleExit();
 }
 
 static void*
@@ -30,12 +30,12 @@ _UT_Msg_Client(
     void* arg
     )
 {
-    int ret = QX_SUCCESS;
+    int ret = SUCCESS;
     int clientFd = -1;
     struct sockaddr_in serverAddr;
     int32_t reuseable = 1; // set port reuseable when fd closed
-    QX_UTIL_MSG msg;
-    QX_UTIL_Q_MSG *qMsg = NULL;
+    UTIL_MSG msg;
+    UTIL_Q_MSG *qMsg = NULL;
     UNUSED(arg);
     
     clientFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -58,14 +58,14 @@ _UT_Msg_Client(
     msg.Head.Type = UT_MSG_HEAD_TYPE;
     msg.Head.VerMagic = UT_MSG_HEAD_VER;
     msg.Head.ClientId = UT_MSG_CLIENTID;
-    ret = QXUtil_FillMsgCont(&msg, (void*)UT_MSG_CONTENT, sizeof(UT_MSG_CONTENT));
+    ret = Util_FillMsgCont(&msg, (void*)UT_MSG_CONTENT, sizeof(UT_MSG_CONTENT));
     if (ret)
     {
         UTLog("Fill msg failed!\n");
         goto CommonReturn;
     }
     msg.Tail.Sign[0] = UT_MSG_TAIL_SIGN;
-    ret = QXUtil_SendMsg(clientFd, &msg);
+    ret = Util_SendMsg(clientFd, &msg);
     if (ret)
     {
         UTLog("send msg failed!\n");
@@ -73,7 +73,7 @@ _UT_Msg_Client(
     }
     UTLog("Send msg: Type = %u\n", msg.Head.Type);
 
-    qMsg = QXUtil_NewSendQMsg(4);
+    qMsg = Util_NewSendQMsg(4);
     if (!qMsg)
     {
         ret = -1;
@@ -81,7 +81,7 @@ _UT_Msg_Client(
         goto CommonReturn;
     }
     memcpy(qMsg->Cont.VarLenCont, "123", sizeof("123"));
-    ret = QXUtil_SendQMsg(clientFd, qMsg);
+    ret = Util_SendQMsg(clientFd, qMsg);
     if (ret)
     {
         UTLog("send msg failed!\n");
@@ -91,7 +91,7 @@ _UT_Msg_Client(
 CommonReturn:
     if (qMsg)
     {
-        QXUtil_FreeSendQMsg(qMsg);
+        Util_FreeSendQMsg(qMsg);
     }
     return NULL;
 }
@@ -101,9 +101,9 @@ _UT_Msg_ForwardT(
     void
     )
 {
-    int ret = QX_SUCCESS;
-    QX_UTIL_MSG *msg = NULL;
-    QX_UTIL_Q_MSG *qMsg = NULL;
+    int ret = SUCCESS;
+    UTIL_MSG *msg = NULL;
+    UTIL_Q_MSG *qMsg = NULL;
     pthread_t clientId;
     int serverFd = -1;
     int clientFd = -1;
@@ -114,22 +114,22 @@ _UT_Msg_ForwardT(
 
     memset(&clientId, 0, sizeof(clientId));
     
-    ret = QXUtil_MsgModuleInit();
+    ret = Util_MsgModuleInit();
     if (ret)
     {
-        UTLog("Init failed! ret %d %s\n", ret, QX_StrErr(ret));
+        UTLog("Init failed! ret %d %s\n", ret, StrErr(ret));
         goto CommonReturn;
     }
-    msg = QXUtil_NewMsg();
+    msg = Util_NewMsg();
     if (!msg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
-    qMsg = QXUtil_NewRecvQMsg();
+    qMsg = Util_NewRecvQMsg();
     if (!qMsg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
 
@@ -162,12 +162,12 @@ _UT_Msg_ForwardT(
     clientFd = accept(serverFd, &tmpClientaddr, &tmpClientLen);
     if(clientFd < 0)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("accept failed!\n");
         goto CommonReturn;
     }
 
-    ret = QXUtil_RecvMsg(clientFd, msg);
+    ret = Util_RecvMsg(clientFd, msg);
     if (ret)
     {
         UTLog("Recv msg failed!\n");
@@ -183,13 +183,13 @@ _UT_Msg_ForwardT(
         msg->Tail.Sign[0] != UT_MSG_TAIL_SIGN ||
         msg->Head.ClientId != UT_MSG_CLIENTID)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("Msg mismatch! Type%u ContentLen%u VerMagic%x Sign%u\n", 
             msg->Head.Type, msg->Head.ContentLen, msg->Head.VerMagic, msg->Tail.Sign[0]);
         goto CommonReturn;
     }
 
-    ret = QXUtil_RecvQMsg(clientFd, qMsg);
+    ret = Util_RecvQMsg(clientFd, qMsg);
     if (ret)
     {
         UTLog("Recv qmsg failed!\n");
@@ -197,7 +197,7 @@ _UT_Msg_ForwardT(
     }
     if (qMsg->Head.ContentLen != 4 || strcmp((char*)(qMsg->Cont.VarLenCont), "123"))
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("Recv qmsg failed! %u %s\n", qMsg->Head.ContentLen, qMsg->Cont.VarLenCont);
         goto CommonReturn;
     }
@@ -205,28 +205,28 @@ _UT_Msg_ForwardT(
 CommonReturn:
     if (msg)
     {
-        QXUtil_FreeMsg(msg);
+        Util_FreeMsg(msg);
     }
     if (qMsg)
     {
-        QXUtil_FreeRecvQMsg(qMsg);
+        Util_FreeRecvQMsg(qMsg);
     }
-    if (QXUtil_MsgModuleExit())
+    if (Util_MsgModuleExit())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
-    if (!QXUtil_MemLeakSafetyCheck())
+    if (!Util_MemLeakSafetyCheck())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
     return ret;
 }
 
 int main()
 {
-    assert(QX_SUCCESS == _UT_Msg_PreInit());
-    assert(QX_SUCCESS == _UT_Msg_ForwardT());
-    assert(QX_SUCCESS == _UT_Msg_FinExit());
+    assert(SUCCESS == _UT_Msg_PreInit());
+    assert(SUCCESS == _UT_Msg_ForwardT());
+    assert(SUCCESS == _UT_Msg_FinExit());
 
     return 0;
 }

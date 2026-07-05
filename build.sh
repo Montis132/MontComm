@@ -27,8 +27,8 @@ while getopts 'asctuS' flag; do
 done
 
 echo "set build all as "$a_flag
-echo "set build QXServer as "$s_flag
-echo "set build QXClient as "$c_flag
+echo "set build Server as "$s_flag
+echo "set build Client as "$c_flag
 echo "set build third_party as "$t_flag
 echo "set build utils as "$u_flag
 echo "set build share as "$S_flag
@@ -61,14 +61,14 @@ BuildShare()
 BuildServer()
 {
     echo "Build server"
-    pushd QXServer > /dev/null
+    pushd Server > /dev/null
     ./server_build.sh
     popd > /dev/null
 }
 BuildClient()
 {
     echo "Build client"
-    pushd QXClient > /dev/null
+    pushd Client > /dev/null
     ./client_build.sh
     popd > /dev/null
 }

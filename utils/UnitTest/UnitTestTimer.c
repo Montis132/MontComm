@@ -1,7 +1,7 @@
 #include "UnitTest.h"
-#include "QXUtilsTimer.h"
-#include "QXUtilsCommonUtil.h"
-#include "QXUtilsMem.h"
+#include "UtilsTimer.h"
+#include "UtilsCommonUtil.h"
+#include "UtilsMem.h"
 
 #define UT_TIMER_CB_TIMEVAL                                 500 //ms
 #define UT_TIMER_WAIT_TIME                                  3 //s
@@ -26,11 +26,11 @@ _UT_Timer_OneTimeFunc(
     
     sg_UT_OneTimeTimerCbCalled = TRUE;
     
-QX_UTIL_GET_CPU_USAGE_START
+UTIL_GET_CPU_USAGE_START
 {
     usleep(10);
 }
-QX_UTIL_GET_CPU_USAGE_END(cpuUsage);
+UTIL_GET_CPU_USAGE_END(cpuUsage);
     
     UTLog("<%s:cpuUsage=%lf>\n", arg, cpuUsage);
 
@@ -54,11 +54,11 @@ _UT_Timer_LoopFunc(
     
     sg_UT_LoopTimerCbCalled ++;
     
-QX_UTIL_GET_CPU_USAGE_START
+UTIL_GET_CPU_USAGE_START
 {
     usleep(10);
 }
-QX_UTIL_GET_CPU_USAGE_END(cpuUsage);
+UTIL_GET_CPU_USAGE_END(cpuUsage);
     
     UTLog("<%s:cpuUsage=%lf>\n", arg, cpuUsage);
     
@@ -73,7 +73,7 @@ _UT_Timer_PreInit(
     void
     )
 {
-    return QXUtil_MemModuleInit();
+    return Util_MemModuleInit();
 }
 
 static int
@@ -81,7 +81,7 @@ _UT_Timer_FinExit(
     void
     )
 {
-    return QXUtil_MemModuleExit();
+    return Util_MemModuleExit();
 }
 
 static int
@@ -89,26 +89,26 @@ _UT_Timer_ForwardT(
     void
     )
 {
-    int ret = QX_SUCCESS;
+    int ret = SUCCESS;
     TIMER_HANDLE handle = NULL;
     
-    ret = QXUtil_TimerModuleInit();
+    ret = Util_TimerModuleInit();
     if (ret)
     {
         UTLog("Health init failed!\n");
         goto CommonReturn;
     }
 
-    ret = QXUtil_TimerAdd(_UT_Timer_OneTimeFunc, UT_TIMER_CB_TIMEVAL, (void*)UT_TIMER_ONT_TIME_ARG, 
-                    QX_UTIL_TIMER_TYPE_ONE_TIME, FALSE, NULL);
+    ret = Util_TimerAdd(_UT_Timer_OneTimeFunc, UT_TIMER_CB_TIMEVAL, (void*)UT_TIMER_ONT_TIME_ARG, 
+                    UTIL_TIMER_TYPE_ONE_TIME, FALSE, NULL);
     if (ret)
     {
         UTLog("Timer one time add failed!\n");
         goto CommonReturn;
     }
 
-    ret = QXUtil_TimerAdd(_UT_Timer_LoopFunc, UT_TIMER_CB_TIMEVAL, (void*)UT_TIMER_LOOP_ARG, 
-                    QX_UTIL_TIMER_TYPE_LOOP, FALSE, &handle);
+    ret = Util_TimerAdd(_UT_Timer_LoopFunc, UT_TIMER_CB_TIMEVAL, (void*)UT_TIMER_LOOP_ARG, 
+                    UTIL_TIMER_TYPE_LOOP, FALSE, &handle);
     if (ret || !handle)
     {
         UTLog("Timer loop add failed!\n");
@@ -118,18 +118,18 @@ _UT_Timer_ForwardT(
     sleep(UT_TIMER_WAIT_TIME);
     if (sg_UT_LoopTimerCbCalled < UT_TIMER_WAIT_TIME*1000 / UT_TIMER_CB_TIMEVAL - 2)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("Timer loop func called %d.\n", sg_UT_LoopTimerCbCalled);
         goto CommonReturn;
     }
     if (!sg_UT_OneTimeTimerCbCalled)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("Timer one time ont called.\n");
         goto CommonReturn;
     }
 
-    QXUtil_TimerDel(&handle);
+    Util_TimerDel(&handle);
     if (handle)
     {
         UTLog("Timer loop del failed!\n");
@@ -137,22 +137,22 @@ _UT_Timer_ForwardT(
     }
     
 CommonReturn:
-    if (QXUtil_TimerModuleExit())
+    if (Util_TimerModuleExit())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
-    if (!QXUtil_MemLeakSafetyCheck())
+    if (!Util_MemLeakSafetyCheck())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
     return ret;
 }
 
 int main()
 {
-    assert(QX_SUCCESS == _UT_Timer_PreInit());
-    assert(QX_SUCCESS == _UT_Timer_ForwardT());
-    assert(QX_SUCCESS == _UT_Timer_FinExit());
+    assert(SUCCESS == _UT_Timer_PreInit());
+    assert(SUCCESS == _UT_Timer_ForwardT());
+    assert(SUCCESS == _UT_Timer_FinExit());
     assert(FALSE == sg_UT_TimerErrHappend);
 
     return 0;

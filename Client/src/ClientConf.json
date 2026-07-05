@@ -1,0 +1,44 @@
+﻿{
+    "ServerConf": [
+        {
+            "Addr" : "127.0.0.1:13231"
+        },
+        {
+            "Addr" : "127.0.0.1:13232"
+        }
+    ],
+    "ClientConf" : {
+        "WorkPath" : "./CWorkPath/",
+        "Id": 13231,
+        "Sm2PriPwd" : "Client",
+        "CryptoSuite": "SM4"
+    },
+    "UtilConf" : {
+        "CmdLineInit": false,
+        "LogConf": {
+            "Init": true,
+            "LogPath": "/var/log/Client.log",
+            "LogLevel": 0,
+            "LogSize": 50,
+            "LogMaxNum": 1
+        },
+        "TPoolConf": {
+            "Init": false,
+            "TPoolSize": 0,
+            "TPoolTimeout": 0,
+            "TPoolQueueMaxLen": 0
+        },
+        "HealthCheckConf": {
+            "Init": false,
+            "LogHealthIntervalS": -1,
+            "MsgHealthIntervalS": -1,
+            "TPoolHealthIntervalS": -1,
+            "CmdLineHealthIntervalS": -1,
+            "MHHealthIntervalS": -1,
+            "MemHealthIntervalS": -1,
+            "TimerHealthIntervalS": -1
+        },
+        "MsgModInit" : true,
+        "TimerModInit" : true
+    }
+}

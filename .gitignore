@@ -13,7 +13,7 @@
 
 # Compiled Dynamic libraries
 *.so
-!QXCommMngr/src/backEnd/QXCommMngr/src/main/resources/lib/*.so
+!CommMngr/src/backEnd/CommMngr/src/main/resources/lib/*.so
 *.dylib
 *.dll
 
@@ -33,9 +33,9 @@
 *.app
 
 # specialized
-QXServer/src/build/*
+Server/src/build/*
 utils/build/*
 third_party/*/build/*
 .vscode/*
 SCShare/build/*
-QXClient/src/build/*
+Client/src/build/*

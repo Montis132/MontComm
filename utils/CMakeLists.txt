@@ -1,5 +1,5 @@
 ############################## project name #################################
-project(QXUtils)
+project(Utils)
 ########################### cmake version need ##############################
 cmake_minimum_required(VERSION 3.0)
 ########################## project directories ##############################
@@ -7,16 +7,16 @@ set(UTILS_ROOT .)
 set(THIRD_PARTY_ROOT ${UTILS_ROOT}/../third_party)
 ################################ src files ##################################
 set(SOURCES
-    QXUtilsCommonUtil.c
-    QXUtilsModuleCommon.c
-    QXUtilsCmdLine.c
-    QXUtilsModuleHealth.c
-    QXUtilsLogIO.c
-    QXUtilsMem.c
-    QXUtilsMsg.c
-    QXUtilsThreadPool.c
-    QXUtilsTimer.c
-    QXUtilsCrypto.c
+    UtilsCommonUtil.c
+    UtilsModuleCommon.c
+    UtilsCmdLine.c
+    UtilsModuleHealth.c
+    UtilsLogIO.c
+    UtilsMem.c
+    UtilsMsg.c
+    UtilsThreadPool.c
+    UtilsTimer.c
+    UtilsCrypto.c
 )
 ############################# include dir ###################################
 include_directories(

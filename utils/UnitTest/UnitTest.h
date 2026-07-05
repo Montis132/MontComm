@@ -1,7 +1,7 @@
 #ifndef _UNIT_TEST_H_
 #define _UNIT_TEST_H_
 
-#include "QXCommonInclude.h"
+#include "CommonInclude.h"
 
 #define UTLog(Fmt, ...)                 printf("----UTLog----[%s-%d]:" Fmt, __func__, __LINE__, ##__VA_ARGS__)
 

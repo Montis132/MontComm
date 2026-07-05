@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.example</groupId>
+    <artifactId>CommMngr</artifactId>
+    <version>1.0.0</version>
+
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+	<dependencies>
+		<dependency>
+		    <groupId>log4j</groupId>
+		    <artifactId>log4j</artifactId>
+		    <version>1.2.17</version>
+		</dependency>
+		<dependency>
+		    <groupId>redis.clients</groupId>
+		    <artifactId>jedis</artifactId>
+		    <version>3.7.0</version>
+		</dependency>
+		<dependency>
+		    <groupId>org.slf4j</groupId>
+		    <artifactId>slf4j-api</artifactId>
+		    <version>1.7.30</version>
+		</dependency>
+		<dependency>
+		    <groupId>ch.qos.logback</groupId>
+		    <artifactId>logback-classic</artifactId>
+		    <version>1.2.3</version>
+		</dependency>
+		<dependency>
+		    <groupId>org.mongodb</groupId>
+		    <artifactId>mongodb-driver-sync</artifactId>
+		    <version>4.3.0</version>
+		</dependency>
+		<dependency>
+		    <groupId>com.google.protobuf</groupId>
+		    <artifactId>protobuf-java</artifactId>
+		    <version>3.21.12</version>
+		</dependency>
+		<dependency>
+		    <groupId>com.google.protobuf</groupId>
+		    <artifactId>protobuf-java-util</artifactId>
+		    <version>3.21.12</version>
+		</dependency>
+		<dependency>
+		    <groupId>CommMngr</groupId>
+		    <artifactId>GmSSLJNI</artifactId>
+		    <version>2.1.0-dev</version>
+		    <scope>system</scope>
+		    <systemPath>${project.basedir}/src/main/resources/lib/GmSSLJNI-2.1.0-dev.jar</systemPath>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+		    <plugin>
+		        <groupId>org.apache.maven.plugins</groupId>
+		        <artifactId>maven-shade-plugin</artifactId>
+        		<version>3.2.4</version>
+		        <executions>
+        		    <execution>
+		                <phase>package</phase>
+                		<goals>
+        		            <goal>shade</goal>
+		                </goals>
+                		<configuration>
+        		            <transformers>
+		                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                        		    <mainClass>CommMngr.Main</mainClass>
+                		        </transformer>
+        		            </transformers>
+		                </configuration>
+		            </execution>
+		        </executions>
+		    </plugin>
+            <plugin>
+				<groupId>org.xolstice.maven.plugins</groupId>
+				<artifactId>protobuf-maven-plugin</artifactId>
+				<version>0.5.1</version>
+
+				<configuration><!-- proto文件目录 -->
+					<protoSourceRoot>../../../../MSShare/</protoSourceRoot>
+					<includePath>../../../../MSShare/</includePath>
+					<!-- 生成的Java文件目录 -->
+					<outputDirectory>src/main/java/</outputDirectory>
+					<clearOutputDirectory>false</clearOutputDirectory>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>compile</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+</project>
+

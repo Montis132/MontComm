@@ -1,8 +1,8 @@
 #include "UnitTest.h"
-#include "QXUtilsThreadPool.h"
-#include "QXUtilsCommonUtil.h"
-#include "QXUtilsMem.h"
-#include "QXUtilsLogIO.h"
+#include "UtilsThreadPool.h"
+#include "UtilsCommonUtil.h"
+#include "UtilsMem.h"
+#include "UtilsLogIO.h"
 
 #define UT_TPOOL_TEST_VAL                                           132
 #define UT_TPOOL_TEST_TIMEOUT_VAL                                   133
@@ -22,7 +22,7 @@ _UT_TPool_PreInit(
     void
     )
 {
-    return QXUtil_MemModuleInit();
+    return Util_MemModuleInit();
 }
 
 static int
@@ -30,7 +30,7 @@ _UT_TPool_FinExit(
     void
     )
 {
-    return QXUtil_MemModuleExit();
+    return Util_MemModuleExit();
 }
 
 static void
@@ -50,7 +50,7 @@ _UT_TPool_AddTaskCb(
         UTLog("Waiting ...\n");
         usleep(1500 * 1000);
     }
-    QXUtil_QXFree(taskArg);
+    Util_Free(taskArg);
     UTLog("_TPool_AddTaskCb success\n");
 }
 
@@ -59,12 +59,12 @@ _UT_TPool_InitExit(
     void
     )
 {
-    int ret = QX_SUCCESS;
-    QX_UTIL_TPOOL_MODULE_INIT_ARG initArg = {.ThreadPoolSize = 256, .Timeout = 5, .TaskListMaxLength = 1024};
+    int ret = SUCCESS;
+    UTIL_TPOOL_MODULE_INIT_ARG initArg = {.ThreadPoolSize = 256, .Timeout = 5, .TaskListMaxLength = 1024};
 
-    QXUtil_LogSetLevel(1);
+    Util_LogSetLevel(1);
     
-    ret = QXUtil_TPoolModuleInit(&initArg);
+    ret = Util_TPoolModuleInit(&initArg);
     if (ret)
     {
         UTLog("Init fail\n");
@@ -72,15 +72,15 @@ _UT_TPool_InitExit(
     }
 
 CommonReturn:
-    if (QXUtil_TPoolModuleExit())
+    if (Util_TPoolModuleExit())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
-    if (!QXUtil_MemLeakSafetyCheck())
+    if (!Util_MemLeakSafetyCheck())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
-    QXUtil_LogSetLevel(0);
+    Util_LogSetLevel(0);
     return ret;
 }
 
@@ -89,116 +89,116 @@ _UT_TPool_ForwardT(
     void
     )
 {
-    int ret = QX_SUCCESS;
+    int ret = SUCCESS;
     UT_TPOOL_TASK_ARG *taskArg = NULL;
     double cpuUsage = 0;
-    QX_UTIL_TPOOL_MODULE_INIT_ARG initArg = {.ThreadPoolSize = 3, .Timeout = 5, .TaskListMaxLength = 1024};
+    UTIL_TPOOL_MODULE_INIT_ARG initArg = {.ThreadPoolSize = 3, .Timeout = 5, .TaskListMaxLength = 1024};
     
-QX_UTIL_GET_CPU_USAGE_START
+UTIL_GET_CPU_USAGE_START
 {
-    ret = QXUtil_TPoolModuleInit(&initArg);
+    ret = Util_TPoolModuleInit(&initArg);
     if (ret)
     {
         UTLog("Init fail\n");
         goto CommonReturn;
     }
 
-    taskArg = (UT_TPOOL_TASK_ARG*)QXUtil_QXCalloc(sizeof(UT_TPOOL_TASK_ARG));
+    taskArg = (UT_TPOOL_TASK_ARG*)Util_Calloc(sizeof(UT_TPOOL_TASK_ARG));
     if (!taskArg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
     taskArg->Value = UT_TPOOL_TEST_VAL;
     taskArg->Ptr = (void*)taskArg;
-    ret = QXUtil_TPoolAddTask(_UT_TPool_AddTaskCb, (void*)taskArg);
+    ret = Util_TPoolAddTask(_UT_TPool_AddTaskCb, (void*)taskArg);
     if (ret)
     {
         UTLog("Add fail\n");
         goto CommonReturn;
     }
 
-    taskArg = (UT_TPOOL_TASK_ARG*)QXUtil_QXCalloc(sizeof(UT_TPOOL_TASK_ARG));
+    taskArg = (UT_TPOOL_TASK_ARG*)Util_Calloc(sizeof(UT_TPOOL_TASK_ARG));
     if (!taskArg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
     taskArg->Value = UT_TPOOL_TEST_VAL;
     taskArg->Ptr = (void*)taskArg;
-    ret = QXUtil_TPoolAddTaskAndWait(_UT_TPool_AddTaskCb, (void*)taskArg, 5);
+    ret = Util_TPoolAddTaskAndWait(_UT_TPool_AddTaskCb, (void*)taskArg, 5);
     if (ret)
     {
         UTLog("Add fail\n");
         goto CommonReturn;
     }
     
-    taskArg = (UT_TPOOL_TASK_ARG*)QXUtil_QXCalloc(sizeof(UT_TPOOL_TASK_ARG));
+    taskArg = (UT_TPOOL_TASK_ARG*)Util_Calloc(sizeof(UT_TPOOL_TASK_ARG));
     if (!taskArg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
     taskArg->Value = UT_TPOOL_TEST_VAL;
     taskArg->Ptr = (void*)taskArg;
-    ret = QXUtil_TPoolAddTask(_UT_TPool_AddTaskCb, (void*)taskArg);
+    ret = Util_TPoolAddTask(_UT_TPool_AddTaskCb, (void*)taskArg);
     if (ret)
     {
         UTLog("Add fail\n");
         goto CommonReturn;
     }
     
-    taskArg = (UT_TPOOL_TASK_ARG*)QXUtil_QXCalloc(sizeof(UT_TPOOL_TASK_ARG));
+    taskArg = (UT_TPOOL_TASK_ARG*)Util_Calloc(sizeof(UT_TPOOL_TASK_ARG));
     if (!taskArg)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         goto CommonReturn;
     }
     taskArg->Value = UT_TPOOL_TEST_TIMEOUT_VAL;
     taskArg->Ptr = (void*)taskArg;
-    ret = QXUtil_TPoolAddTaskAndWait(_UT_TPool_AddTaskCb, (void*)taskArg, 1);
-    if (ret != -QX_ETIMEDOUT)
+    ret = Util_TPoolAddTaskAndWait(_UT_TPool_AddTaskCb, (void*)taskArg, 1);
+    if (ret != -ETIMEDOUT)
     {
         UTLog("wait fail, ret %d\n", ret);
-        ret = -QX_EIO;
+        ret = -EIO;
         goto CommonReturn;
     }
     else
     {
-        ret = QX_SUCCESS;
+        ret = SUCCESS;
     }
     sleep(1);
     usleep(100 * 100);
 }
-QX_UTIL_GET_CPU_USAGE_END(cpuUsage);
+UTIL_GET_CPU_USAGE_END(cpuUsage);
     UTLog("Cpu usage %lf\n", cpuUsage);
 
     if (cpuUsage > UT_TPOOL_MAX_CPU_USAGE)
     {
-        ret = -QX_E2BIG;
+        ret = -E2BIG;
     }
     
 CommonReturn:
-    if (QXUtil_TPoolModuleExit())
+    if (Util_TPoolModuleExit())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
-    if (!QXUtil_MemLeakSafetyCheck())
+    if (!Util_MemLeakSafetyCheck())
     {
-        ret = -QX_EINVAL;
+        ret = -EINVAL;
     }
     return ret;
 }
 
 int main()
 {
-    assert(QX_SUCCESS == _UT_TPool_PreInit());
-    assert(QX_SUCCESS == _UT_TPool_InitExit());
-    assert(QX_SUCCESS == _UT_TPool_FinExit());
+    assert(SUCCESS == _UT_TPool_PreInit());
+    assert(SUCCESS == _UT_TPool_InitExit());
+    assert(SUCCESS == _UT_TPool_FinExit());
     
-    assert(QX_SUCCESS == _UT_TPool_PreInit());
-    assert(QX_SUCCESS == _UT_TPool_ForwardT());
-    assert(QX_SUCCESS == _UT_TPool_FinExit());
+    assert(SUCCESS == _UT_TPool_PreInit());
+    assert(SUCCESS == _UT_TPool_ForwardT());
+    assert(SUCCESS == _UT_TPool_FinExit());
     
     assert(FALSE == sg_UT_TPool_TaskErrHapped);
 

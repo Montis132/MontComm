@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package SCMsg;
+
+enum MsgType {
+    SC_MSG_TYPE_UKNOWN                           = 0;
+    SC_MSG_TYPE_REGISTER_REQUEST                 = 1;
+    SC_MSG_TYPE_REGISTER_CHALLENGE               = 2;
+    SC_MSG_TYPE_REGISTER_CHALLENGE_REPLY         = 3;
+    SC_MSG_TYPE_REGISTER_FINISH                  = 4;
+    SC_MSG_TYPE_MSG_TRANS_C_2_S                  = 100;
+    SC_MSG_TYPE_MSG_TRANS_S_2_C                  = 101;
+}
+
+enum CipherSuite {
+    SC_CIPHER_SUITE_NONE                         = 0;
+    SC_CIPHER_SUITE_SM4                          = 1;
+}
+
+// main structure
+message MsgPayload {
+    uint32          transId                     = 1;
+    uint64          timestamp                   = 2;
+    string          bussinessKey                = 3;
+    ClientInfo      clientInfo                  = 4;
+    ServerInfo      serverInfo                  = 5;
+    int32           errCode                     = 6;
+    MsgBase         msgBase                     = 7;
+}
+
+message ClientInfo {
+    uint32          clientId            = 1;   
+}
+
+message ServerInfo {
+    uint32          serverId            = 1;
+    string          serverName          = 2;
+}
+
+message MsgBase {
+    uint32                          msgType                 = 1;    // MsgType
+    ClientRegisterRequest           registerRequest         = 2;    // SC_MSG_TYPE_REGISTER_REQUEST
+    ServerRegisterChallenge         registerChallenge       = 3;    // SC_MSG_TYPE_REGISTER_CHALLENGE
+    ClientRegisterChallengeReply    registerChallengeReply  = 4;    // SC_MSG_TYPE_REGISTER_CHALLENGE_REPLY
+    ServerRegisterFinish            registerFinish          = 5;    // SC_MSG_TYPE_REGISTER_FINISH
+    TransMsg                        transMsg                = 6;    // SC_MSG_TYPE_MSG_TRANS_C_2_S / SC_MSG_TYPE_MSG_TRANS_S_2_C
+}
+
+message ClientRegisterRequest {
+    uint32          clientId            = 1;
+    uint32          cipherSuite         = 2;            // CipherSuite
+}
+
+message ServerRegisterChallenge {
+    bytes           cipherRand    = 1;
+}
+
+message ClientRegisterChallengeReply {
+    bytes           plainRand     = 1;
+    bytes           cipherRand    = 2;
+}
+
+message ServerRegisterFinish {
+    bytes           plainRand           = 1;
+    CipherContent   cipherContent       = 2;
+}
+
+message CipherContent {
+    uint32          cipherSuite         = 1;            // CipherSuite
+    bytes           cipherSM4Key        = 2;            // SC_CIPHER_SUITE_SM4
+}
+
+message TransMsg {
+    ClientInfo      from                = 1;
+    ClientInfo      to                  = 2;
+    string          msg                 = 3;
+}

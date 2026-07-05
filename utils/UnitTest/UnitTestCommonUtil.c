@@ -1,18 +1,18 @@
 #include "UnitTest.h"
-#include "QXUtilsCommonUtil.h"
+#include "UtilsCommonUtil.h"
 
 static int
 _UT_CommonUtil_ByteOrderU64(
     void
     )
 {
-    int ret = QX_SUCCESS;
+    int ret = SUCCESS;
     uint64_t before = 0x12345678, afterShouldBe = 0x78563412, after = 0;
 
-    after = QXUtil_htonll(before);
-    if (after != afterShouldBe || QXUtil_ntohll(after) != before)
+    after = Util_htonll(before);
+    if (after != afterShouldBe || Util_ntohll(after) != before)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         goto CommonReturn;
     }
     
@@ -25,22 +25,22 @@ _UT_CommonUtil_ParseIp(
     void
     )
 {
-    int ret = QX_SUCCESS;
+    int ret = SUCCESS;
     char* ipStr = "192.168.137.101";
     char* ipStrWithPort = "192.168.137.101:443";
     uint32_t ip = 0;
     uint16_t port = 0;
 
-    ret = QXUtil_ParseStringToIpv4(ipStr, strlen(ipStr), &ip);
-    if (ret < QX_SUCCESS || ip != 3232270693)
+    ret = Util_ParseStringToIpv4(ipStr, strlen(ipStr), &ip);
+    if (ret < SUCCESS || ip != 3232270693)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         goto CommonReturn;
     }
-    ret = QXUtil_ParseStringToIpv4AndPort(ipStrWithPort, strlen(ipStrWithPort), &ip, &port);
-    if (ret < QX_SUCCESS || ip != 3232270693 || port != 443)
+    ret = Util_ParseStringToIpv4AndPort(ipStrWithPort, strlen(ipStrWithPort), &ip, &port);
+    if (ret < SUCCESS || ip != 3232270693 || port != 443)
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         goto CommonReturn;
     }
     
@@ -49,7 +49,7 @@ CommonReturn:
 }
 int main()
 {
-    assert(QX_SUCCESS == _UT_CommonUtil_ByteOrderU64());
+    assert(SUCCESS == _UT_CommonUtil_ByteOrderU64());
 
     return 0;
 }

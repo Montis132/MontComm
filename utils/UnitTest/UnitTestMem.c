@@ -1,5 +1,5 @@
 #include "UnitTest.h"
-#include "QXUtilsMem.h"
+#include "UtilsMem.h"
 
 #define UT_MEM_REGISTER_NAME                        "UT_MEM"
 
@@ -8,54 +8,54 @@ _UT_Mem_ForwardT(
     void
     )
 {
-    int ret = QX_SUCCESS;
-    int memId = QX_UTIL_MEM_MODULE_INVALID_ID;
+    int ret = SUCCESS;
+    int memId = UTIL_MEM_MODULE_INVALID_ID;
     void* ptr = NULL;
 
-    ret = QXUtil_MemModuleInit();
+    ret = Util_MemModuleInit();
     if (ret)
     {
         UTLog("Init fail\n");
         goto CommonReturn;
     }
 
-    ret = QXUtil_MemRegister(&memId, (char*)UT_MEM_REGISTER_NAME);
+    ret = Util_MemRegister(&memId, (char*)UT_MEM_REGISTER_NAME);
     if (ret)
     {
         UTLog("Register fail\n");
         goto CommonReturn;
     }
 
-    ptr = QXUtil_MemCalloc(memId, sizeof(int));
+    ptr = Util_MemCalloc(memId, sizeof(int));
     if (!ptr)
     {
-        ret = -QX_ENOMEM;
+        ret = -ENOMEM;
         UTLog("calloc fail\n");
         goto CommonReturn;
     }
     
     if (ptr)
     {
-        QXUtil_MemFree(memId, ptr);
+        Util_MemFree(memId, ptr);
     }
-    if (!QXUtil_MemLeakSafetyCheckWithId(memId))
+    if (!Util_MemLeakSafetyCheckWithId(memId))
     {
-        ret = -QX_EIO;
+        ret = -EIO;
         UTLog("mem leak check fail\n");
         goto CommonReturn;
     }
-    ret = QXUtil_MemUnRegister(&memId);
+    ret = Util_MemUnRegister(&memId);
 CommonReturn:
-    if (QXUtil_MemModuleExit())
+    if (Util_MemModuleExit())
     {
-        ret = -QX_EIO;
+        ret = -EIO;
     }
     return ret;
 }
 
 int main()
 {
-    assert(QX_SUCCESS == _UT_Mem_ForwardT());
+    assert(SUCCESS == _UT_Mem_ForwardT());
 
     return 0;
 }

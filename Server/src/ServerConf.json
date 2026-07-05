@@ -1,0 +1,48 @@
+﻿{
+    "ServerWorkerConf": [
+        {
+            "Load": 1024,
+            "Port": 13231,
+            "WorkPath": "./worker1",
+            "Sm2PriPwd": "Server"
+        },
+		{   
+            "Load": 2048,
+            "Port": 13232,
+            "WorkPath": "./worker2",
+            "Sm2PriPwd": "Server"
+        }
+    ],
+    "MngrClientConf": {
+        "ServerAddr": "192.168.137.101:14001",
+        "TrustCert111" : "/home/yuzb/yuzb/tmp/CommMngr.crt"
+    },
+    "UtilConf" : {
+        "CmdLineInit": true,
+        "LogConf": {
+            "Init": true,
+            "LogPath": "/var/log/Server.log",
+            "LogLevel": 0,
+            "LogSize": 50,
+            "LogMaxNum": 10
+        },
+        "TPoolConf": {
+            "Init": true,
+            "TPoolSize": 2,
+            "TPoolTimeout": 60,
+            "TPoolQueueMaxLen": 1024
+        },
+        "HealthCheckConf": {
+            "Init": true,
+            "LogHealthIntervalS": -1,
+            "MsgHealthIntervalS": -1,
+            "TPoolHealthIntervalS": 600,
+            "CmdLineHealthIntervalS": -1,
+            "MHHealthIntervalS": -1,
+            "MemHealthIntervalS": 600,
+            "TimerHealthIntervalS": -1
+        },
+        "MsgModInit" : true,
+        "TimerModInit" : true
+    }
+}
