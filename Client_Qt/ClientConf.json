@@ -1,0 +1,16 @@
+{
+    "ServerConf": [
+        {
+            "Addr" : "127.0.0.1:13231"
+        },
+        {
+            "Addr" : "127.0.0.1:13232"
+        }
+    ],
+    "ClientConf" : {
+        "WorkPath" : "./CWorkPath/",
+        "Id": 13231,
+        "Sm2PriPwd" : "Client",
+        "CryptoSuite": "SM4"
+    }
+}
