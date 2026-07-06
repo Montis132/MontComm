@@ -55,6 +55,33 @@ Util_TPoolSetMaxQueueLength(
     int32_t QueueLen
     );
 
+typedef void* UTIL_TPOOL_HANDLE;
+
+UTIL_TPOOL_HANDLE
+Util_TPoolGetHandle(
+    void
+    );
+
+int
+Util_TPoolAddTaskByHandle(
+    UTIL_TPOOL_HANDLE Handle,
+    void (*TaskFunc)(void*),
+    void* TaskArg
+    );
+
+int
+Util_TPoolAddTaskAndWaitByHandle(
+    UTIL_TPOOL_HANDLE Handle,
+    void (*TaskFunc)(void*),
+    void* TaskArg,
+    int32_t TimeoutSec
+    );
+
+int
+Util_TPoolDestroyHandle(
+    UTIL_TPOOL_HANDLE Handle
+    );
+
 #ifdef __cplusplus
 }
 #endif

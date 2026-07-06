@@ -47,7 +47,7 @@ Util_CmdLineModuleCollectStat(
 
 int
 Util_CmdExternalRegister(
-    __in UTIL_CMD_EXTERNAL_CONT Cont
+    UTIL_CMD_EXTERNAL_CONT Cont
     );
 
 #ifdef __cplusplus

@@ -22,6 +22,14 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.MongoException;
 import org.gmssl.*;
+import org.bson.Document;
+import com.mongodb.client.MongoCollection;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.UUID;
+import java.nio.file.Files;
+import java.io.File;
+import java.io.InputStream;
 
 public class MngrHttpSvr extends Thread{
     private String RedisUrl;
@@ -44,6 +52,10 @@ public class MngrHttpSvr extends Thread{
     public static final String GetBestServer_Key = "/api/getBestServer";
     public static final String GetIntraDomainForClient_key = "/api/getIntraDomainForClient";
     public static final String PostIntraDomain_Key = "/api/postIntraDomain";
+
+    public static final String V1_ServerInfo_Key = "/api/v1/server/info";
+    public static final String V1_Domain_Key = "/api/v1/domain";
+    public static final String V1_KeyImport_Key = "/api/v1/key/import";
 
     public MngrHttpSvr (int Port, String MongoUrl, String RedisUrl, String RedisPwd,
                         String SSLKeyStore, String SSLKeyStorePwd) {
@@ -100,13 +112,16 @@ public class MngrHttpSvr extends Thread{
         // 创建httpserver
         HttpServer server = HttpServer.create(new InetSocketAddress(Port), 0);
         // handler map
-        server.createContext(Register_Key, new MngrHttpHandler(Log, Register_Key));
-        server.createContext(Login_Key, new MngrHttpHandler(Log, Login_Key));
-        server.createContext(GetAllClientMap_Key, new MngrHttpHandler(Log, GetAllClientMap_Key));
-        server.createContext(GetBestServer_Key, new MngrHttpHandler(Log, GetBestServer_Key));
-        server.createContext(GetAllIntraDomain_Key, new MngrHttpHandler(Log, GetAllIntraDomain_Key));
-        server.createContext(GetIntraDomainForClient_key, new MngrHttpHandler(Log, GetIntraDomainForClient_key));
-        server.createContext(PostIntraDomain_Key, new MngrHttpHandler(Log, PostIntraDomain_Key));
+        server.createContext(Register_Key, new MngrHttpHandler(Log, Register_Key, Database, Redis));
+        server.createContext(Login_Key, new MngrHttpHandler(Log, Login_Key, Database, Redis));
+        server.createContext(GetAllClientMap_Key, new MngrHttpHandler(Log, GetAllClientMap_Key, Database, Redis));
+        server.createContext(GetBestServer_Key, new MngrHttpHandler(Log, GetBestServer_Key, Database, Redis));
+        server.createContext(GetAllIntraDomain_Key, new MngrHttpHandler(Log, GetAllIntraDomain_Key, Database, Redis));
+        server.createContext(GetIntraDomainForClient_key, new MngrHttpHandler(Log, GetIntraDomainForClient_key, Database, Redis));
+        server.createContext(PostIntraDomain_Key, new MngrHttpHandler(Log, PostIntraDomain_Key, Database, Redis));
+        server.createContext(V1_ServerInfo_Key, new MngrHttpHandler(Log, V1_ServerInfo_Key, Database, Redis));
+        server.createContext(V1_Domain_Key, new MngrHttpHandler(Log, V1_Domain_Key, Database, Redis));
+        server.createContext(V1_KeyImport_Key, new MngrHttpHandler(Log, V1_KeyImport_Key, Database, Redis));
         // 设置线程池的大小
         server.setExecutor(null);
         server.start(); // 启动服务器
@@ -115,9 +130,13 @@ public class MngrHttpSvr extends Thread{
     static class MngrHttpHandler implements HttpHandler {
         private String Key;
         private Logger Log;
-        public MngrHttpHandler(Logger Log, String InputKey) {
+        private MongoDatabase Database;
+        private Jedis Redis;
+        public MngrHttpHandler(Logger Log, String InputKey, MongoDatabase Database, Jedis Redis) {
             this.Log = Log;
             Key = InputKey;
+            this.Database = Database;
+            this.Redis = Redis;
         }
         private static Map<String, String> parseQuery(String query) {
             Map<String, String> parameters = new HashMap<>();
@@ -134,10 +153,38 @@ public class MngrHttpSvr extends Thread{
             }
             return parameters;
         }
+        private static String getRole(HttpExchange exchange) {
+            String role = exchange.getRequestHeaders().getFirst("X-Role");
+            return role != null ? role : "user";
+        }
+        private static boolean checkPermission(String role, String... allowedRoles) {
+            if ("manager".equals(role)) return true;
+            for (String allowed : allowedRoles) {
+                if (allowed.equals(role)) return true;
+            }
+            return false;
+        }
+        private static String readBody(HttpExchange exchange) throws IOException {
+            try (InputStream is = exchange.getRequestBody()) {
+                return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            }
+        }
+        private static void sendJson(HttpExchange exchange, int status, String json) throws IOException {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(status, bytes.length);
+            OutputStream os = exchange.getResponseBody();
+            os.write(bytes);
+            os.close();
+        }
+        private static void sendError(HttpExchange exchange, int status, String msg) throws IOException {
+            String json = "{\"error\":\"" + msg + "\"}";
+            sendJson(exchange, status, json);
+        }
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            // 定义响应消息体
             String response = "NULL";
+            boolean responseSent = false;
 
             try {
                 switch (Key) {
@@ -192,6 +239,43 @@ public class MngrHttpSvr extends Thread{
                         }
                         response = PostIntraDomain_Key;
                         break;
+                    case V1_ServerInfo_Key:
+                        if (!"GET".equals(exchange.getRequestMethod())) {
+                            sendError(exchange, 405, "Method not allowed");
+                            responseSent = true;
+                            break;
+                        }
+                        if (!checkPermission(getRole(exchange), "user", "partner")) {
+                            sendError(exchange, 403, "Forbidden");
+                            responseSent = true;
+                            break;
+                        }
+                        handleServerInfo(exchange);
+                        responseSent = true;
+                        break;
+                    case V1_Domain_Key:
+                        if (!checkPermission(getRole(exchange), "manager")) {
+                            sendError(exchange, 403, "Forbidden");
+                            responseSent = true;
+                            break;
+                        }
+                        handleDomainRequest(exchange);
+                        responseSent = true;
+                        break;
+                    case V1_KeyImport_Key:
+                        if (!"POST".equals(exchange.getRequestMethod())) {
+                            sendError(exchange, 405, "Method not allowed");
+                            responseSent = true;
+                            break;
+                        }
+                        if (!checkPermission(getRole(exchange), "partner", "user")) {
+                            sendError(exchange, 403, "Forbidden");
+                            responseSent = true;
+                            break;
+                        }
+                        handleKeyImport(exchange);
+                        responseSent = true;
+                        break;
                     default:
                         response = "UnKnown Key" + "Key";
                         break;
@@ -201,13 +285,130 @@ public class MngrHttpSvr extends Thread{
                 throw e;
             }
 
-            // 设置响应头信息
-            exchange.getResponseHeaders().set("Content-Type", "text/plain");
-            exchange.sendResponseHeaders(200, response.length());
-            // 获取输出流，发送响应消息
-            OutputStream os = exchange.getResponseBody();
-            os.write(response.getBytes());
-            os.close();
+            if (!responseSent) {
+                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+                exchange.sendResponseHeaders(200, response.length());
+                OutputStream os = exchange.getResponseBody();
+                os.write(response.getBytes());
+                os.close();
+            }
+        }
+        private void handleServerInfo(HttpExchange exchange) throws IOException {
+            try {
+                Sm2Key sm2Key = new Sm2Key();
+                sm2Key.generateKey();
+                byte[] publicKeyInfo = sm2Key.exportPublicKeyInfoDer();
+                String publicKeyB64 = Base64.getEncoder().encodeToString(publicKeyInfo);
+                String json = "{\"name\":\"CommServer\",\"address\":\"192.168.137.101:14001\",\"publicKey\":\"" + publicKeyB64 + "\"}";
+                sendJson(exchange, 200, json);
+            } catch (Exception e) {
+                Log.error("Failed to get server info", e);
+                sendError(exchange, 500, "Internal server error");
+            }
+        }
+        private void handleDomainRequest(HttpExchange exchange) throws IOException {
+            String method = exchange.getRequestMethod();
+            String path = exchange.getRequestURI().getPath();
+            if ("/api/v1/domain".equals(path)) {
+                if ("GET".equals(method)) {
+                    handleDomainList(exchange);
+                } else if ("POST".equals(method)) {
+                    handleDomainCreate(exchange);
+                } else {
+                    sendError(exchange, 405, "Method not allowed");
+                }
+            } else if (path.startsWith("/api/v1/domain/")) {
+                String id = path.substring("/api/v1/domain/".length());
+                if (id.isEmpty()) {
+                    sendError(exchange, 400, "Bad request");
+                    return;
+                }
+                if ("PUT".equals(method)) {
+                    handleDomainUpdate(exchange, id);
+                } else if ("DELETE".equals(method)) {
+                    handleDomainDelete(exchange, id);
+                } else {
+                    sendError(exchange, 405, "Method not allowed");
+                }
+            } else {
+                sendError(exchange, 400, "Bad request");
+            }
+        }
+        private void handleDomainList(HttpExchange exchange) throws IOException {
+            try {
+                MongoCollection<Document> collection = Database.getCollection("Domains");
+                StringBuilder json = new StringBuilder("[");
+                boolean first = true;
+                for (Document doc : collection.find()) {
+                    if (!first) json.append(",");
+                    json.append(doc.toJson());
+                    first = false;
+                }
+                json.append("]");
+                sendJson(exchange, 200, json.toString());
+            } catch (Exception e) {
+                Log.error("Failed to list domains", e);
+                sendError(exchange, 500, "Internal server error");
+            }
+        }
+        private void handleDomainCreate(HttpExchange exchange) throws IOException {
+            try {
+                String body = readBody(exchange);
+                Document doc = Document.parse(body);
+                doc.put("_id", UUID.randomUUID().toString());
+                MongoCollection<Document> collection = Database.getCollection("Domains");
+                collection.insertOne(doc);
+                sendJson(exchange, 201, doc.toJson());
+            } catch (Exception e) {
+                Log.error("Failed to create domain", e);
+                sendError(exchange, 500, "Internal server error");
+            }
+        }
+        private void handleDomainUpdate(HttpExchange exchange, String id) throws IOException {
+            try {
+                String body = readBody(exchange);
+                Document updateDoc = Document.parse(body);
+                MongoCollection<Document> collection = Database.getCollection("Domains");
+                Document filter = new Document("_id", id);
+                Document set = new Document("$set", updateDoc);
+                collection.updateOne(filter, set);
+                sendJson(exchange, 200, "{\"status\":\"updated\"}");
+            } catch (Exception e) {
+                Log.error("Failed to update domain", e);
+                sendError(exchange, 500, "Internal server error");
+            }
+        }
+        private void handleDomainDelete(HttpExchange exchange, String id) throws IOException {
+            try {
+                MongoCollection<Document> collection = Database.getCollection("Domains");
+                Document filter = new Document("_id", id);
+                collection.deleteOne(filter);
+                sendJson(exchange, 200, "{\"status\":\"deleted\"}");
+            } catch (Exception e) {
+                Log.error("Failed to delete domain", e);
+                sendError(exchange, 500, "Internal server error");
+            }
+        }
+        private void handleKeyImport(HttpExchange exchange) throws IOException {
+            try {
+                String pemBody = readBody(exchange);
+                File tempFile = File.createTempFile("sm2pub_", ".pem");
+                tempFile.deleteOnExit();
+                Files.writeString(tempFile.toPath(), pemBody);
+                Sm2Key sm2Key = new Sm2Key();
+                sm2Key.importPublicKeyInfoPem(tempFile.getAbsolutePath());
+                byte[] publicKeyDer = sm2Key.exportPublicKeyInfoDer();
+                Document doc = new Document("_id", UUID.randomUUID().toString());
+                doc.put("publicKeyDer", Base64.getEncoder().encodeToString(publicKeyDer));
+                doc.put("createdAt", new java.util.Date().toString());
+                MongoCollection<Document> collection = Database.getCollection("PublicKeys");
+                collection.insertOne(doc);
+                String json = "{\"status\":\"imported\",\"id\":\"" + doc.getString("_id") + "\"}";
+                sendJson(exchange, 200, json);
+            } catch (Exception e) {
+                Log.error("Failed to import key", e);
+                sendError(exchange, 500, "Failed to import key");
+            }
         }
         public void handleRegister(HttpExchange exchange) throws IOException {
             try {

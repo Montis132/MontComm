@@ -1,7 +1,9 @@
 #include <curl/curl.h>
 #include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "ClientWorker.h"
 #include "UtilsCommonUtil.h"
 #include "ClientMsgHandler.h"
@@ -77,10 +79,66 @@ ClientWorker::InitSm2Key(std::string CryptoPath, std::string PriKeyPwd) {
     return ret;
 }
 
+static size_t _CurlWriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
 ERR_T ClientWorker::GetServerInfo(void) {
     ERR_T ret = SUCCESS;
-    ret =  Util_CryptSm2ImportPubKey("worker1/S_SM2_Pub.pem", &RegisterCtx.PubKey);
-    
+
+    if (!InitParam.CommMngrUrl.empty()) {
+        CURL *curl = curl_easy_init();
+        if (curl) {
+            std::string url = InitParam.CommMngrUrl + "/api/v1/server/info";
+            std::string response;
+            long httpCode = 0;
+
+            curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _CurlWriteCallback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+
+            CURLcode res = curl_easy_perform(curl);
+            if (res == CURLE_OK) {
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+                if (httpCode == 200) {
+                    try {
+                        auto jsonResp = nlohmann::json::parse(response);
+
+                        if (jsonResp.contains("server_addr") && !jsonResp["server_addr"].is_null()) {
+                            std::string serverAddr = jsonResp["server_addr"];
+                            if (!InitParam.Servers.empty()) {
+                                InitParam.Servers[0].Addr = serverAddr;
+                            }
+                        }
+
+                        if (jsonResp.contains("server_pubkey") && !jsonResp["server_pubkey"].is_null()) {
+                            std::string pubKeyPem = jsonResp["server_pubkey"];
+                            std::string pubKeyPath = InitParam.WorkPath + "/S_SM2_Pub.pem";
+                            std::ofstream pubKeyFile(pubKeyPath);
+                            if (pubKeyFile.is_open()) {
+                                pubKeyFile << pubKeyPem;
+                                pubKeyFile.close();
+                                ret = Util_CryptSm2ImportPubKey(pubKeyPath.c_str(), &RegisterCtx.PubKey);
+                                if (ret == SUCCESS) {
+                                    Util_Hexdump("Server-Sm2PubKey", (uint8_t*)&RegisterCtx.PubKey.public_key, sizeof(RegisterCtx.PubKey.public_key));
+                                    curl_easy_cleanup(curl);
+                                    return ret;
+                                }
+                            }
+                        }
+                    } catch (...) {
+                        ret = -EINVAL;
+                    }
+                }
+            }
+            curl_easy_cleanup(curl);
+        }
+    }
+
+    ret = Util_CryptSm2ImportPubKey("worker1/S_SM2_Pub.pem", &RegisterCtx.PubKey);
     Util_Hexdump("Server-Sm2PubKey", (uint8_t*)&RegisterCtx.PubKey.public_key, sizeof(RegisterCtx.PubKey.public_key));
     return ret;
 }
@@ -178,7 +236,8 @@ ERR_T ClientWorker::RegisterToServer(void) {
     ERR_T ret = SUCCESS;
     SCMsg::MsgPayload msgPayload;
     UTIL_Q_MSG *qMsg = NULL;
-    std::string serializedData;
+    uint8_t msgpackBuf[4096];
+    size_t msgpackLen = 0;
     // init payload
     MsgHandler->ProtoInitMsg(msgPayload);
     // check register send
@@ -190,7 +249,7 @@ ERR_T ClientWorker::RegisterToServer(void) {
         goto CommRet;
     }
     // create registerproto
-    ret = MsgHandler->CreateRegisterProtoMsg(*msgPayload.mutable_msgbase());
+    ret = MsgHandler->CreateRegisterProtoMsg(msgPayload.msgBase);
     if (ret) {
         ret = -EINVAL;
         LogErr("Create proto register failed!");
@@ -199,20 +258,20 @@ ERR_T ClientWorker::RegisterToServer(void) {
     // msg pre send
     MsgHandler->ProtoPreSend(msgPayload);
     // send msg
-    serializedData = msgPayload.SerializeAsString();
-    qMsg = Util_NewSendQMsg(serializedData.size());
+    msgpackLen = SCMsg::MsgPayloadEncodeToBuf(msgPayload, msgpackBuf, sizeof(msgpackBuf));
+    qMsg = Util_NewSendQMsg(msgpackLen);
     if (!qMsg) {
         ret = -ENOMEM;
         LogErr("Get msg mem failed!");
         goto CommRet;
     }
-    memcpy(qMsg->Cont.VarLenCont, serializedData.data(), serializedData.size());
+    memcpy(qMsg->Cont.VarLenCont, msgpackBuf, msgpackLen);
     ret = Util_SendQMsg(WorkerFd, qMsg);
     if (ret < SUCCESS) {
         LogErr("send msg failed! ret %d", ret);
         goto CommRet;
     }
-    LogInfo("Send Msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Send Msg: %s", SCMsg::MsgPayloadToString(msgPayload).c_str());
     RegisterCtx.RegisterRetried ++;
 
 CommRet:
@@ -297,11 +356,11 @@ void ClientWorker::_RecvMsg(evutil_socket_t Fd, short Event, void *Arg) {
         }
     }
 
-    if (!msgPayload.ParseFromArray(recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
+    if (!SCMsg::MsgPayloadDecodeFromBuf(msgPayload, recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
         LogErr("parse form array failed!");
         goto CommRet;
     }
-    LogInfo("Recv msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Recv msg: %s", SCMsg::MsgPayloadToString(msgPayload).c_str());
     ret = worker->MsgHandler->DispatchMsg(msgPayload);
     if (ret < 0) {
         LogErr("dispatch msg failed! ret %d", ret);
@@ -453,6 +512,13 @@ ERR_T ClientWorker::Init(C_WORKER_INIT_PARAM InitParam){
         goto InitErr;
     }
 
+    // mem init
+    ret = Util_MemRegister(&MemId, (char*)std::to_string(InitParam.ClientId).c_str());
+    if (ret != SUCCESS) {
+        LogErr("Register mem module for %d failed!", InitParam.ClientId);
+        goto InitErr;
+    }
+
     MsgHandler = new ClientMsgHandler(this);
     if (MsgHandler == NULL) {
         LogErr("Init MsgHandler failed! ret %d", ret);
@@ -513,7 +579,8 @@ ERR_T
 ClientWorker::SendMsg(uint32_t ClientId, std::string Msg) {
     SCMsg::MsgPayload sendMsgPayload;
     ERR_T ret = SUCCESS;
-    std::string serializedData;
+    uint8_t msgpackBuf[4096];
+    size_t msgpackLen = 0;
     const uint8_t* plain = NULL;
     size_t plainLen = 0;
     uint8_t *cipher = NULL;
@@ -528,23 +595,23 @@ ClientWorker::SendMsg(uint32_t ClientId, std::string Msg) {
     }
 
     MsgHandler->ProtoInitMsg(sendMsgPayload);
-    sendMsgPayload.mutable_msgbase()->set_msgtype(SCMsg::SC_MSG_TYPE_MSG_TRANS_C_2_S);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_from()->set_clientid(InitParam.ClientId);
+    sendMsgPayload.msgBase.msgType = SCMsg::SC_MSG_TYPE_MSG_TRANS_C_2_S;
+    sendMsgPayload.msgBase.transMsg.from.clientId = InitParam.ClientId;
     // to my self
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_to()->set_clientid(ClientId);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->set_msg(Msg);
+    sendMsgPayload.msgBase.transMsg.to.clientId = ClientId;
+    sendMsgPayload.msgBase.transMsg.msg = Msg;
     // pre send
     MsgHandler->ProtoPreSend(sendMsgPayload);
-    serializedData = sendMsgPayload.SerializeAsString();
+    msgpackLen = SCMsg::MsgPayloadEncodeToBuf(sendMsgPayload, msgpackBuf, sizeof(msgpackBuf));
     if (RegisterCtx.Status == SCMsg::SC_MSG_TYPE_REGISTER_FINISH &&
         RegisterCtx.TransCipherSuite == SCMsg::SC_CIPHER_SUITE_SM4) {
-        cipherLen = Util_CryptSm4CBCGetPaddedLen(serializedData.size()) + sizeof(iv);
+        cipherLen = Util_CryptSm4CBCGetPaddedLen(msgpackLen) + sizeof(iv);
         cipher = (uint8_t*)Util_MemCalloc(MemId, cipherLen);
         if (!cipher) {
             goto CommRet;
         }
-        plain = reinterpret_cast<const uint8_t*>(serializedData.c_str());
-        plainLen = serializedData.size();
+        plain = msgpackBuf;
+        plainLen = msgpackLen;
         ret = Util_CryptSm4CBCEncrypt(plain, plainLen, RegisterCtx.TransKey.Sm4Key, sizeof(RegisterCtx.TransKey.Sm4Key), cipher, &cipherLen, iv, &ivLen);
         if (ret || ivLen != sizeof(iv)) {
             LogErr("encrypt msg failed!");
@@ -558,18 +625,18 @@ ClientWorker::SendMsg(uint32_t ClientId, std::string Msg) {
         }
         memcpy(sendMsg->Cont.VarLenCont, cipher, cipherLen);
     } else {
-        sendMsg = Util_NewSendQMsg(serializedData.size());
+        sendMsg = Util_NewSendQMsg(msgpackLen);
         if (!sendMsg) {
             goto CommRet;
         }
-        memcpy(sendMsg->Cont.VarLenCont, serializedData.data(), serializedData.size());
+        memcpy(sendMsg->Cont.VarLenCont, msgpackBuf, msgpackLen);
     }
     ret = Util_SendQMsg(WorkerFd, sendMsg);
     if (ret < SUCCESS) {
         LogErr("send msg failed! ret %d", ret);
         goto CommRet;
     }
-    LogInfo("Send Msg: %s", sendMsgPayload.ShortDebugString().c_str());
+    LogInfo("Send Msg: %s", SCMsg::MsgPayloadToString(sendMsgPayload).c_str());
 
 CommRet:
     if (cipher)
@@ -580,6 +647,10 @@ CommRet:
 }
 
 ClientWorker::ClientWorker() :
-    WorkerFd(-1), State(C_WORKER_STATS_UNSPEC), StatMachineTimer(NULL), EventBase(NULL), RecvEvent(NULL), MsgHandler(NULL), CurrentServerPos(-1){}
+    WorkerFd(-1), State(C_WORKER_STATS_UNSPEC), StatMachineTimer(NULL), EventBase(NULL), RecvEvent(NULL), MsgHandler(NULL), CurrentServerPos(-1), MemId(UTIL_MEM_MODULE_INVALID_ID){}
 
-ClientWorker::~ClientWorker() {}
+ClientWorker::~ClientWorker() {
+    if (MemId != UTIL_MEM_MODULE_INVALID_ID) {
+        Util_MemUnRegister(&MemId);
+    }
+}

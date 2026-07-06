@@ -93,7 +93,7 @@ Util_MsgModuleCollectStat(
 int
 Util_RecvMsg(
     int Fd,
-    __inout UTIL_MSG *RetMsg
+     UTIL_MSG *RetMsg
     );
 
 MUST_CHECK
@@ -128,7 +128,7 @@ Util_ClearMsgCont(
 int
 Util_RecvQMsg(
     int Fd,
-    __inout UTIL_Q_MSG *RetMsg
+     UTIL_Q_MSG *RetMsg
     );
 
 MUST_CHECK
@@ -159,6 +159,24 @@ Util_FreeRecvQMsg(
     void
 Util_FreeRecvQMsgCont(
     UTIL_Q_MSG *Msg
+    );
+
+#define UTIL_MSG_FRAGMENT_SIZE  (64 * 1024)
+
+int
+Util_SendQMsgFragmented(
+    int Fd,
+    UTIL_Q_MSG *Msg
+    );
+
+UTIL_Q_MSG*
+Util_RecvQMsgFragmented(
+    int Fd
+    );
+
+void
+Util_MsgFragCleanup(
+    void
     );
 #ifdef __cplusplus
 }

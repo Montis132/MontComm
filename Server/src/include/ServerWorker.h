@@ -2,8 +2,9 @@
 #define _SERVER_WORKER_H_
 #include <iostream>
 #include <map>
+#include <unordered_map>
 
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "UtilsModuleCommon.h"
 #include "ServerMsgHandler.h"
 #include "CommMngrClient.h"
@@ -34,6 +35,7 @@ typedef struct _S_CLIENT_NODE {
     int RecvMsgCnt;
     int ForwardMsgCnt;
     S_CLIENT_REGISTER_CTX RegisterCtx;
+    time_t ConnectTime;
     struct epoll_event *RecvEvent;
 }
 S_CLIENT_NODE;
@@ -63,7 +65,9 @@ private:
     void ClientRecv(int32_t);
     void EraseClient_NL(int32_t);
     void EraseClient(int32_t);
+    static void _FlushUnregisteredClients(evutil_socket_t, short, void*);
     ServerMsgHandler *MsgHandler;
+    TIMER_HANDLE FlushTimer;
 public:
     std::map<int, S_CLIENT_NODE*> ClientMap;
     std::unordered_map<uint32_t, int> ClientFdMap;

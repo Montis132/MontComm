@@ -34,6 +34,7 @@ typedef struct _C_WORKER_INIT_PARAM {
     std::string WorkPath;
     std::string PriKeyPwd;
     uint32_t CryptoSuite;
+    std::string CommMngrUrl;
 }
 C_WORKER_INIT_PARAM;
 
@@ -67,6 +68,7 @@ private:
     SM2_KEY PubKey;
     std::string PriKeyPath;
     int32_t CurrentServerPos;
+    int MemId;
 
     ERR_T InitPath(std::string);
     ERR_T InitSm2Key(std::string, std::string);

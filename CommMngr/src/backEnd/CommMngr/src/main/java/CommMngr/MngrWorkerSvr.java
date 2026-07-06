@@ -3,6 +3,7 @@ package CommMngr;
 import org.apache.log4j.Logger;
 import java.io.IOException;
 import java.io.FileInputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -20,9 +21,9 @@ import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.MongoException;
-import CommMngr.MSMsg.*;
-import com.google.protobuf.*;
-import com.google.protobuf.util.JsonFormat;
+import org.msgpack.core.MessagePack;
+import org.msgpack.core.MessageUnpacker;
+import org.msgpack.core.MessagePacker;
 import org.gmssl.*;
 
 public class MngrWorkerSvr extends Thread{
@@ -242,35 +243,49 @@ public class MngrWorkerSvr extends Thread{
     }
 
     private static void handleDecryptedData(ByteBuffer decryptedData, SocketChannel channel, SSLEngine sslEngine) throws IOException {
-        // Process decrypted data, for example, parsing a message
-        MSMsg.MsgPayload msgPayload;
         byte[] data = new byte[decryptedData.remaining()];
         decryptedData.get(data);
-        try {
-            msgPayload = MSMsg.MsgPayload.parseFrom(data);
-            Log.info("Recv Msg: " + JsonFormat.printer().omittingInsignificantWhitespace().print(msgPayload));
-        } catch (InvalidProtocolBufferException e){
+        try (MessageUnpacker unpacker = MessagePack.newDefaultUnpacker(data)) {
+            int mapSize = unpacker.unpackMapHeader();
+            for (int i = 0; i < mapSize; i++) {
+                int fieldKey = unpacker.unpackInt();
+                if (fieldKey == 1) {
+                    // msgBase
+                    int msgBaseMapSize = unpacker.unpackMapHeader();
+                    for (int j = 0; j < msgBaseMapSize; j++) {
+                        int key = unpacker.unpackInt();
+                        if (key == 1) {
+                            Log.info("Recv Msg - msgType: " + unpacker.unpackInt());
+                        } else {
+                            unpacker.unpackValue();
+                        }
+                    }
+                } else {
+                    unpacker.unpackValue();
+                }
+            }
+        } catch (Exception e) {
             Log.error("try parse message failed, length " + data.length, e);
             throw new IOException("Failed to parse message", e);
         }
 
-        // create response
-        MSMsg.MsgBase msgBase = MSMsg.MsgBase.newBuilder()
-            .setMsgType(2)
-            .build();
-        MSMsg.MsgPayload responseMsg = MSMsg.MsgPayload.newBuilder()
-            .setMsgBase(msgBase)
-            .build();
+        // create response: MsgPayload { msgBase { msgType: 2 } }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (MessagePacker packer = MessagePack.newDefaultPacker(out)) {
+            packer.packMapHeader(1);   // MsgPayload: 1 field
+            packer.packInt(1);         // field 1 = msgBase
+            packer.packMapHeader(1);   // MsgBase: 1 field
+            packer.packInt(1);         // field 1 = msgType
+            packer.packInt(2);         // value
+        }
+        byte[] responseBytes = out.toByteArray();
         
-        // send
-        ByteBuffer responseBuffer = ByteBuffer.wrap(responseMsg.toByteArray());
+        ByteBuffer responseBuffer = ByteBuffer.wrap(responseBytes);
         ByteBuffer myNetData = ByteBuffer.allocate(sslEngine.getSession().getPacketBufferSize());
         
-        // Encrypt the response message
         SSLEngineResult result = sslEngine.wrap(responseBuffer, myNetData);
-        myNetData.flip();  // Prepare the buffer for reading
+        myNetData.flip();
 
-        // Check result status and write the encrypted data to channel
         if (result.getStatus() == SSLEngineResult.Status.OK) {
             while (myNetData.hasRemaining()) {
                 channel.write(myNetData);
@@ -278,7 +293,7 @@ public class MngrWorkerSvr extends Thread{
         } else {
             Log.error("SSLEngine wrap result: " + result.getStatus());
         }
-        Log.info("Send Msg: " + JsonFormat.printer().omittingInsignificantWhitespace().print(responseMsg));
+        Log.info("Send Msg: response msgType=2");
     }
 
     public static class SessionState {

@@ -248,7 +248,7 @@ Util_TPoolModuleExit(
     void
     )
 {
-    int loop = 0, ret = SUCCESS;
+    int ret = SUCCESS;
 
     if (sg_TPoolModuleInited)
     {
@@ -273,7 +273,7 @@ Util_TPoolModuleExit(
 int
 Util_TPoolAddTask(
     void (*TaskFunc)(void*),
-    __in void* TaskArg
+     void* TaskArg
     )
 {
     int ret = SUCCESS;
@@ -324,7 +324,7 @@ CommonReturn:
 int
 Util_TPoolAddTaskAndWait(
     void (*TaskFunc)(void*),
-    __inout void* TaskArg,
+     void* TaskArg,
     int32_t TimeoutSec
     )
 {
@@ -474,5 +474,165 @@ Util_TPoolSetMaxQueueLength(
         sg_ThreadPool->TaskMaxLength = QueueLen;
         pthread_mutex_unlock(&sg_ThreadPool->Lock);
     }
+}
+
+UTIL_TPOOL_HANDLE
+Util_TPoolGetHandle(
+    void
+    )
+{
+    if (!sg_TPoolModuleInited) {
+        return NULL;
+    }
+    return (UTIL_TPOOL_HANDLE)sg_ThreadPool;
+}
+
+int
+Util_TPoolAddTaskByHandle(
+    UTIL_TPOOL_HANDLE Handle,
+    void (*TaskFunc)(void*),
+    void* TaskArg
+    )
+{
+    int ret = SUCCESS;
+    THREAD_POOL* pool = (THREAD_POOL*)Handle;
+    TPOOL_TASK *node = NULL;
+
+    if (!pool || !TaskFunc) {
+        ret = -EINVAL;
+        goto CommonReturn;
+    }
+
+    node = (TPOOL_TASK*)_TPoolCalloc(sizeof(TPOOL_TASK));
+    if (!node) {
+        ret = -ENOMEM;
+        goto CommonReturn;
+    }
+    node->HasTimeOut = FALSE;
+    node->TaskArg = TaskArg;
+    node->TaskFunc = TaskFunc;
+    LIST_NODE_INIT(&node->List);
+
+    pthread_mutex_lock(&pool->Lock);
+    if (pool->TaskListLength >= pool->TaskMaxLength) {
+        ret = -EBUSY;
+        pthread_cond_signal(&pool->Cond);
+        pthread_mutex_unlock(&pool->Lock);
+        _TPoolFree(node);
+        goto CommonReturn;
+    }
+    LIST_ADD_TAIL(&node->List, &pool->TaskListHead);
+    pool->TaskListLength++;
+    pthread_cond_signal(&pool->Cond);
+    UATOMIC_INC(&sg_ThreadPoolStats.TaskAdded);
+    pthread_mutex_unlock(&pool->Lock);
+
+CommonReturn:
+    return ret;
+}
+
+int
+Util_TPoolAddTaskAndWaitByHandle(
+    UTIL_TPOOL_HANDLE Handle,
+    void (*TaskFunc)(void*),
+    void* TaskArg,
+    int32_t TimeoutSec
+    )
+{
+    int ret = SUCCESS;
+    THREAD_POOL* pool = (THREAD_POOL*)Handle;
+    struct timespec ts = {0, 0};
+    BOOL taskAdded = FALSE;
+    pthread_mutex_t *taskLock;
+    pthread_cond_t *taskCond;
+    pthread_condattr_t taskAttr;
+    BOOL taskInited = FALSE;
+    TPOOL_TASK *node = NULL;
+
+    if (!pool || !TaskFunc) {
+        ret = -EINVAL;
+        goto CommonReturn;
+    }
+
+    taskLock = (pthread_mutex_t*)_TPoolCalloc(sizeof(pthread_mutex_t));
+    taskCond = (pthread_cond_t*)_TPoolCalloc(sizeof(pthread_cond_t));
+    node = (TPOOL_TASK*)_TPoolCalloc(sizeof(TPOOL_TASK));
+    if (!taskLock || !taskCond || !node) {
+        ret = -ENOMEM;
+        goto CommonReturn;
+    }
+
+    pthread_condattr_init(&taskAttr);
+    pthread_condattr_setclock(&taskAttr, CLOCK_MONOTONIC);
+    pthread_mutex_init(taskLock, NULL);
+    pthread_cond_init(taskCond, &taskAttr);
+    pthread_condattr_destroy(&taskAttr);
+    taskInited = TRUE;
+
+    node->HasTimeOut = TRUE;
+    node->TaskArg = TaskArg;
+    node->TaskFunc = TaskFunc;
+    node->TaskCond = taskCond;
+    node->TaskLock = taskLock;
+    node->TaskStat = TPOOL_TASK_STATUS_INIT;
+
+    pthread_mutex_lock(&pool->Lock);
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != SUCCESS) {
+        pthread_mutex_unlock(&pool->Lock);
+        ret = -EIO;
+        goto CommonReturn;
+    }
+    LIST_ADD_TAIL(&node->List, &pool->TaskListHead);
+    pool->TaskListLength++;
+    taskAdded = TRUE;
+    pthread_mutex_lock(taskLock);
+    pthread_cond_signal(&pool->Cond);
+    UATOMIC_INC(&sg_ThreadPoolStats.TaskAdded);
+    pthread_mutex_unlock(&pool->Lock);
+
+    if (taskAdded) {
+        ts.tv_sec += (TimeoutSec > 0) ? TimeoutSec : pool->TaskDefaultTimeout;
+        ret = -pthread_cond_timedwait(taskCond, taskLock, &ts);
+    }
+    if (-ETIMEDOUT == ret) {
+        node->TaskStat = TPOOL_TASK_STATUS_TIMEOUT;
+    }
+    pthread_mutex_unlock(taskLock);
+
+CommonReturn:
+    if (ret != SUCCESS)
+        UATOMIC_INC(&sg_ThreadPoolStats.TaskFailed);
+    if (taskInited && (!taskAdded || ret != -ETIMEDOUT)) {
+        pthread_mutex_destroy(taskLock);
+        pthread_cond_destroy(taskCond);
+        _TPoolFree(taskLock);
+        _TPoolFree(taskCond);
+    }
+    return ret;
+}
+
+int
+Util_TPoolDestroyHandle(
+    UTIL_TPOOL_HANDLE Handle
+    )
+{
+    THREAD_POOL* pool = (THREAD_POOL*)Handle;
+    if (!pool) {
+        return -EINVAL;
+    }
+    pool->Exit = TRUE;
+    pthread_mutex_lock(&(pool->Lock));
+    pthread_cond_broadcast(&(pool->Cond));
+    pthread_mutex_unlock(&(pool->Lock));
+
+    pthread_mutex_destroy(&(pool->Lock));
+    pthread_cond_destroy(&(pool->Cond));
+    _TPoolFree(pool->Threads);
+    _TPoolFree(pool);
+    if (pool == sg_ThreadPool) {
+        sg_ThreadPool = NULL;
+        sg_TPoolModuleInited = FALSE;
+    }
+    return SUCCESS;
 }
 

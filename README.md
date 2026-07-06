@@ -141,7 +141,7 @@ Server在启动后，定期向redis中写入监控数据例如cpu、内存使用
 
 ### 性能说明
 
-* Server和Client、CommMngr和Server之间的通信使用protobuf编码，可以有效降低网络传输数据大小。
+* Server和Client、CommMngr和Server之间的通信使用msgpack编码，可以有效降低网络传输数据大小。
 * Server和Client之间的加密传输通过SM4加密，性能略逊于AES，优于3DES，但内存需求通常低于此二者，可以更好地在低端设备上运行。若引入支持SM4的硬件提供加密服务/快速软件实现技术，加密性能将更上一筹。
 
 ## 构建流程
@@ -197,22 +197,15 @@ cd Comm
 > ​	path = third_party/libevent
 >
 > ​	url = https://github.com/libevent/libevent.git (commit:d655c06b3a6b0fe8cff900f293bf0e5aac6eb0a2 v3.1.1)
+>
+> [submodule "third_party/msgpack"]
+>
+> ​	path = third_party/msgpack
+>
+> ​	url = https://github.com/msgpack/msgpack.git (tag:cpp-0.5.6)
 
 
-#### Ⅱ 部署protobuf
-1. 下载protobuf并部署：
-
-   ```sh
-   wget https://github.com/protocolbuffers/protobuf/releases/download/v21.12/protobuf-all-21.12.zip
-   unzip protobuf-all-21.12.zip
-   cd protobuf-all-21.12
-   ./configure
-   make
-   sudo make install
-   sudo ldconfig                                      # refresh shared library cache.
-   ```
-
-#### Ⅲ 构建utils代码仓：
+#### Ⅱ 构建utils代码仓：
 
 在工程目录执行./build -u ，将会自动进入utils，执行 utils_build.sh脚本，编译所有.c文件，并且将此代码仓的文件编译为.a文件。此代码仓包含了一些c语言编写的模块功能，包括安全管理模块、健康检查模块、日志模块、内存管理模块、命令行模块、线程池模块、定时器模块、网络消息模块、作者自己编写的双向循环链表，以及一些常用的api。（相关的模块说明待开发者补充）
 
@@ -230,11 +223,11 @@ cmake -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=ON ..
 make && make test
 ```
 
-#### Ⅳ 构建Server 、 Client 代码共享仓（主要是protobuf文件）
+#### Ⅲ 构建Server 、 Client 代码共享仓
 
-在工程目录执行./build -h ，将会自动进入SCShare，执行 scshare_build.sh脚本，编译.proto文件，并且将此代码仓的文件编译为.a文件
+在工程目录执行./build -S ，将会自动进入SCShare，执行 scshare_build.sh脚本，将此代码仓的文件编译为.a文件。该仓使用msgpack进行消息序列化。
 
-#### Ⅴ 构建 Server、Client 服务
+#### Ⅳ 构建 Server、Client 服务
 
 在工程目录执行./build -sc ，将会自动进入Server、Client，执行脚本，编译。生成可执行文件Server/src/build/Server、 Client/src/build/Client。
 
@@ -258,6 +251,16 @@ make && make test
 * 为Client提供Server信息请求接口（openapi）×
 * 添加互通域增删改查api×
 * 提供SM2公钥导入api×
+
+### 消息序列化（protobuf → msgpack）
+
+* 移除protobuf依赖（proto文件、pb.cc/pb.h） √
+* 引入msgpack-c子模块（tag cpp-0.5.6） √
+* 以msgpack重写SCShare/MSShare消息头（SCMsg.h、MSMsg.h） √
+* msgpack-c独立编译为静态库，三个项目依赖 √
+* end-to-end测试msgpack序列化/反序列化 ×
+* 添加msgpack单元测试 ×
+* 评估并升级msgpack-c版本到header-only（≥ cpp-2.0） ×
 
 ### util 组件
 

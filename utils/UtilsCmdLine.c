@@ -131,9 +131,9 @@ _CmdLineUsage(
 
 static int 
 _CmdServerInit(
-    __inout int *ServerFd,
-    __inout int *EpollFd,
-    __in char *RoleName
+     int *ServerFd,
+     int *EpollFd,
+     char *RoleName
     )
 {
     int ret = SUCCESS;
@@ -715,7 +715,7 @@ Util_CmdLineModuleExit(
 // optional, for special users
 int
 Util_CmdExternalRegister(
-    __in UTIL_CMD_EXTERNAL_CONT Cont
+     UTIL_CMD_EXTERNAL_CONT Cont
     )
 {
     int ret = SUCCESS;

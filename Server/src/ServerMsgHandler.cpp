@@ -17,7 +17,7 @@ using namespace SCMsg;
 typedef struct _S_TPOOL_MSG_SEND_ARG{
     SCMsg::MsgPayload *SendMsg;
     int32_t Fd;
-    ServerWorker* Worker;
+    class ServerWorker* Worker;
     ServerMsgHandler* MsgHandler;
 }
 S_TPOOL_MSG_SEND_ARG;
@@ -25,7 +25,6 @@ S_TPOOL_MSG_SEND_ARG;
 extern "C" void Server_TPoolSendMsgFunc(void* Arg) {
     S_TPOOL_MSG_SEND_ARG *arg = (S_TPOOL_MSG_SEND_ARG*)Arg;
     UTIL_Q_MSG *sendMsg = NULL;
-    std::string serializedData;
     ERR_T ret = SUCCESS;
     uint8_t *cipher = NULL;
     size_t cipherLen = 0;
@@ -33,14 +32,17 @@ extern "C" void Server_TPoolSendMsgFunc(void* Arg) {
     size_t plainLen = 0;
     uint8_t iv[UTIL_CRYPT_SM4_IV_LEN] = {0};
     size_t ivLen = sizeof(iv);
+    uint8_t msgpackBuf[4096];
+    size_t msgpackLen = 0;
+    auto *worker = arg ? arg->Worker : NULL;
 
     if (!arg || !arg->MsgHandler || !arg->SendMsg || !arg->Worker) {
         goto CommRet;
     }
-    arg->MsgHandler->ProtoPreSend(*arg->SendMsg);
-    serializedData = arg->SendMsg->SerializeAsString();
 
-    auto *worker = arg->Worker;
+    arg->MsgHandler->ProtoPreSend(*arg->SendMsg);
+    msgpackLen = MsgPayloadEncodeToBuf(*arg->SendMsg, msgpackBuf, sizeof(msgpackBuf));
+    {
     auto clientIt = worker->ClientMap.find(arg->Fd);
     if (clientIt == worker->ClientMap.end()) {
         LogErr("Client %d not found!", arg->Fd);
@@ -50,14 +52,14 @@ extern "C" void Server_TPoolSendMsgFunc(void* Arg) {
 
     if (regCtx->Status == SC_MSG_TYPE_REGISTER_FINISH && 
         regCtx->TransCipherSuite == SC_CIPHER_SUITE_SM4 &&
-        arg->SendMsg->msgbase().msgtype() != SC_MSG_TYPE_REGISTER_FINISH) {
-        cipherLen = Util_CryptSm4CBCGetPaddedLen(serializedData.size()) + sizeof(iv);
+        arg->SendMsg->msgBase.msgType != SC_MSG_TYPE_REGISTER_FINISH) {
+        cipherLen = Util_CryptSm4CBCGetPaddedLen(msgpackLen) + sizeof(iv);
         cipher = (uint8_t*)worker->Calloc(cipherLen);
         if (!cipher) {
             goto CommRet;
         }
-        plain = reinterpret_cast<const uint8_t*>(serializedData.c_str());
-        plainLen = serializedData.size();
+        plain = msgpackBuf;
+        plainLen = msgpackLen;
         Util_Hexdump("Plain-Data", (uint8_t*)plain, plainLen);
         ret = Util_CryptSm4CBCEncrypt(plain, plainLen, 
             regCtx->TransKey.Sm4Key, sizeof(regCtx->TransKey.Sm4Key), 
@@ -75,29 +77,31 @@ extern "C" void Server_TPoolSendMsgFunc(void* Arg) {
         memcpy(sendMsg->Cont.VarLenCont, cipher, cipherLen);
         Util_Hexdump("SM4-Encrypt-Data", cipher, cipherLen);
     } else {
-        sendMsg = Util_NewSendQMsg(serializedData.size());
+        sendMsg = Util_NewSendQMsg(msgpackLen);
         if (!sendMsg) {
             goto CommRet;
         }
-        memcpy(sendMsg->Cont.VarLenCont, serializedData.data(), serializedData.size());
+        memcpy(sendMsg->Cont.VarLenCont, msgpackBuf, msgpackLen);
     } 
     ret = Util_SendQMsg(arg->Fd, sendMsg);
     if (ret < SUCCESS) {
         LogErr("send msg failed! ret %d", ret);
         goto CommRet;
     }
-    LogInfo("Send Msg: %s", arg->SendMsg->ShortDebugString().c_str());
+    LogInfo("Send Msg: %s", MsgPayloadToString(*arg->SendMsg).c_str());
+    }
 
 CommRet:
     if (sendMsg) 
         Util_FreeSendQMsg(sendMsg);
-    if (cipher)
+    if (cipher && worker)
         worker->Free(cipher);
-    if (arg->SendMsg) {
+    if (arg && arg->SendMsg) {
         arg->MsgHandler->ProtoRelease(*arg->SendMsg);
         delete arg->SendMsg;
     }
-    worker->Free(arg);
+    if (arg && worker)
+        worker->Free(arg);
     return ;
 }
 
@@ -105,31 +109,26 @@ ERR_T ServerMsgHandler::SendMsgAsync(const MsgPayload MsgPayload, int32_t Fd) {
     S_TPOOL_MSG_SEND_ARG *tpoolArg = NULL;
     ERR_T ret = SUCCESS;
     
-    tpoolArg = (S_TPOOL_MSG_SEND_ARG*)ServerWorker->Calloc(sizeof(S_TPOOL_MSG_SEND_ARG));
+    tpoolArg = (S_TPOOL_MSG_SEND_ARG*)Worker->Calloc(sizeof(S_TPOOL_MSG_SEND_ARG));
     if (!tpoolArg) {
         return -ENOMEM;
     }
     tpoolArg->SendMsg = new SCMsg::MsgPayload(MsgPayload);
     tpoolArg->Fd = Fd;
     tpoolArg->MsgHandler = this;
-    tpoolArg->Worker = ServerWorker;
+    tpoolArg->Worker = Worker;
     ret = Util_TPoolAddTask(Server_TPoolSendMsgFunc, (void*)tpoolArg);
     if (ret < SUCCESS) {
         ProtoRelease(*tpoolArg->SendMsg);
         delete tpoolArg->SendMsg;
-        ServerWorker->Free(tpoolArg);
+        Worker->Free(tpoolArg);
     }
     return ret;
 }
 
-void ServerMsgHandler::ProtoInitMsg(
-    MsgPayload &MsgPayload
-    )
-{
-    UNUSED(MsgPayload.mutable_msgbase());
-    UNUSED(MsgPayload.mutable_serverinfo());
-    MsgPayload.set_transid(TransId.load());
-    MsgPayload.mutable_serverinfo()->set_servername(ServerWorker->InitParam.Name);
+void ServerMsgHandler::ProtoInitMsg(MsgPayload &MsgPayload) {
+    MsgPayload.transId = TransId.load();
+    MsgPayload.serverInfo.serverName = Worker->InitParam.Name;
 }
 
 void ServerMsgHandler::ProtoPreSend(MsgPayload &MsgPayload) {
@@ -138,13 +137,12 @@ void ServerMsgHandler::ProtoPreSend(MsgPayload &MsgPayload) {
     auto value = nowMs.time_since_epoch();
     long timestamp = value.count();
 
-    MsgPayload.set_timestamp(timestamp);
+    MsgPayload.timestamp = timestamp;
     TransId.fetch_add(1);
 }
 
 void ServerMsgHandler::ProtoRelease(MsgPayload &MsgPayload) {
-    UNUSED(MsgPayload.release_msgbase());
-    UNUSED(MsgPayload.release_serverinfo());
+    (void)MsgPayload;
 }
 
 ERR_T ServerMsgHandler::RegisterClient(
@@ -158,7 +156,7 @@ ERR_T ServerMsgHandler::RegisterClient(
     size_t randTmpBuffLen = sizeof(randTmpBuff);
     uint8_t plainBuff[128];
     size_t plainBuffLen = sizeof(plainBuff);
-    auto *worker = ServerWorker;
+    auto *worker = Worker;
 
     pthread_spin_lock(&worker->Lock);
     auto it = worker->ClientMap.find(Fd);
@@ -171,16 +169,16 @@ ERR_T ServerMsgHandler::RegisterClient(
 
     ProtoInitMsg(sendMsgPayload);
 
-    if (MsgPayload.msgbase().msgtype() != (uint32_t)clientNode->RegisterCtx.Status + 1 && 
-        MsgPayload.msgbase().msgtype() != (uint32_t)clientNode->RegisterCtx.Status - 1) {
-        LogDbg("Ignore invalid type %u, current %d", MsgPayload.msgbase().msgtype(), clientNode->RegisterCtx.Status);
+    if (MsgPayload.msgBase.msgType != (uint32_t)clientNode->RegisterCtx.Status + 1 && 
+        MsgPayload.msgBase.msgType != (uint32_t)clientNode->RegisterCtx.Status - 1) {
+        LogDbg("Ignore invalid type %u, current %d", MsgPayload.msgBase.msgType, clientNode->RegisterCtx.Status);
         return -EEXIST;
     }
 
-    switch (MsgPayload.msgbase().msgtype()) {
+    switch (MsgPayload.msgBase.msgType) {
         case SC_MSG_TYPE_REGISTER_REQUEST:
-            clientNode->ClientId = MsgPayload.msgbase().registerrequest().clientid();
-            clientNode->RegisterCtx.TransCipherSuite = MsgPayload.msgbase().registerrequest().ciphersuite();
+            clientNode->ClientId = MsgPayload.msgBase.registerRequest.clientId;
+            clientNode->RegisterCtx.TransCipherSuite = MsgPayload.msgBase.registerRequest.cipherSuite;
             ret = worker->MngrClient->GetPubKeyAfterGotClientId(clientNode->ClientId, clientNode->RegisterCtx.PubKey);
             if (ret) {
                 LogErr("Get pubKey failed! ret %d", ret);
@@ -199,12 +197,12 @@ ERR_T ServerMsgHandler::RegisterClient(
                 goto CommRet;
             }
             Util_Hexdump("REGISTER_CHALLENGE Plain-Enc", randTmpBuff, randTmpBuffLen);
-            sendMsgPayload.mutable_msgbase()->set_msgtype(SC_MSG_TYPE_REGISTER_CHALLENGE);
-            sendMsgPayload.mutable_msgbase()->mutable_registerchallenge()->set_cipherrand(randTmpBuff, randTmpBuffLen);
+            sendMsgPayload.msgBase.msgType = SC_MSG_TYPE_REGISTER_CHALLENGE;
+            sendMsgPayload.msgBase.registerChallenge.cipherRand.assign(randTmpBuff, randTmpBuff + randTmpBuffLen);
             clientNode->RegisterCtx.Status = SC_MSG_TYPE_REGISTER_CHALLENGE;
             break;
         case SC_MSG_TYPE_REGISTER_CHALLENGE_REPLY: {
-            auto &receivedPlain = MsgPayload.msgbase().registerchallengereply().plainrand();
+            auto &receivedPlain = MsgPayload.msgBase.registerChallengeReply.plainRand;
             if (receivedPlain.size() != sizeof(clientNode->RegisterCtx.ChallengeRandSend)) {
                 LogErr("Invalid plainrand size %zu", receivedPlain.size());
                 ret = -E2BIG;
@@ -217,7 +215,7 @@ ERR_T ServerMsgHandler::RegisterClient(
             }
             Util_Hexdump("CHALLENGE_REPLY Plain", (uint8_t*)receivedPlain.data(), receivedPlain.size());
 
-            auto &receivedCipher = MsgPayload.msgbase().registerchallengereply().cipherrand();
+            auto &receivedCipher = MsgPayload.msgBase.registerChallengeReply.cipherRand;
             if (receivedCipher.size() > sizeof(randTmpBuff)) {
                 ret = -E2BIG;
                 LogErr("Too big cipherrand, size %zu", receivedCipher.size());
@@ -234,8 +232,8 @@ ERR_T ServerMsgHandler::RegisterClient(
                 goto CommRet;
             }
             Util_Hexdump("REGISTER_FINISH Cipher-Dec", plainBuff, plainBuffLen);
-            sendMsgPayload.mutable_msgbase()->set_msgtype(SC_MSG_TYPE_REGISTER_FINISH);
-            sendMsgPayload.mutable_msgbase()->mutable_registerfinish()->set_plainrand(plainBuff, plainBuffLen);
+            sendMsgPayload.msgBase.msgType = SC_MSG_TYPE_REGISTER_FINISH;
+            sendMsgPayload.msgBase.registerFinish.plainRand.assign(plainBuff, plainBuff + plainBuffLen);
             if (clientNode->RegisterCtx.TransCipherSuite == SC_CIPHER_SUITE_SM4) {
                 ret = Util_CryptRandBytes(clientNode->RegisterCtx.TransKey.Sm4Key, sizeof(clientNode->RegisterCtx.TransKey.Sm4Key));
                 if (ret) {
@@ -251,15 +249,13 @@ ERR_T ServerMsgHandler::RegisterClient(
                     goto CommRet;
                 }
                 Util_Hexdump("REGISTER_FINISH SM4-Key-Enc", randTmpBuff, randTmpBuffLen);
-                sendMsgPayload.mutable_msgbase()->
-                    mutable_registerfinish()->mutable_ciphercontent()->set_ciphersm4key(randTmpBuff, randTmpBuffLen);
+                sendMsgPayload.msgBase.registerFinish.cipherContent.cipherSM4Key.assign(randTmpBuff, randTmpBuff + randTmpBuffLen);
             } else {
                 ret = -ENOSYS;
                 LogErr("Unsupported crypt suite %d", clientNode->RegisterCtx.TransCipherSuite);
                 goto CommRet;
             }
-            sendMsgPayload.mutable_msgbase()->
-                mutable_registerfinish()->mutable_ciphercontent()->set_ciphersuite(clientNode->RegisterCtx.TransCipherSuite);
+            sendMsgPayload.msgBase.registerFinish.cipherContent.cipherSuite = clientNode->RegisterCtx.TransCipherSuite;
             clientNode->RegisterCtx.Status = SC_MSG_TYPE_REGISTER_FINISH;
             worker->ClientCurrentNum.fetch_add(1);
             if (worker->ClientFdMap.find(clientNode->ClientId) == worker->ClientFdMap.end()) {
@@ -269,7 +265,7 @@ ERR_T ServerMsgHandler::RegisterClient(
             break;
         }
         default:
-            LogErr("Ignore invalid type %u", MsgPayload.msgbase().msgtype());
+            LogErr("Ignore invalid type %u", MsgPayload.msgBase.msgType);
             ret = -EEXIST;
             goto CommRet;
     }
@@ -293,49 +289,51 @@ ERR_T ServerMsgHandler::TransmitMsg(
     int32_t peerFd = -1;
     SCMsg::MsgPayload sendMsgPayload;
     ERR_T ret = SUCCESS;
-    auto *worker = ServerWorker;
-    auto &transMsg = RecvMsgPayload.msgbase().transmsg();
-    uint32_t toClientId = transMsg.to().clientid();
-    uint32_t fromClientId = transMsg.from().clientid();
+    auto *worker = Worker;
+    auto &transMsg = RecvMsgPayload.msgBase.transMsg;
+    uint32_t toClientId = transMsg.to.clientId;
+    uint32_t fromClientId = transMsg.from.clientId;
+    decltype(worker->ClientMap)::iterator srcIt, peerNodeIt;
+    decltype(worker->ClientFdMap)::iterator peerIt;
     
-    auto peerIt = worker->ClientFdMap.find(toClientId);
+    peerIt = worker->ClientFdMap.find(toClientId);
     if (peerIt == worker->ClientFdMap.end()) {
-        sendMsgPayload.mutable_msgbase()->mutable_transmsg()->set_msg("Peer not registered!");
+        sendMsgPayload.msgBase.transMsg.msg = "Peer not registered!";
         ret = -EINVAL;
         LogErr("Peer not registered, clientid %u", toClientId);
         goto CommErr;
     }
 
     peerFd = peerIt->second;
-    auto srcIt = worker->ClientMap.find(Fd);
+    srcIt = worker->ClientMap.find(Fd);
     if (srcIt == worker->ClientMap.end() ||
         srcIt->second->RegisterCtx.Status != SCMsg::SC_MSG_TYPE_REGISTER_FINISH) {
-        sendMsgPayload.mutable_msgbase()->mutable_transmsg()->set_msg("Not registered, please wait or check!");
+        sendMsgPayload.msgBase.transMsg.msg = "Not registered, please wait or check!";
         ret = -EINVAL;
         LogErr("Sender not registered!");
         goto CommErr;
     }
-    auto peerNodeIt = worker->ClientMap.find(peerFd);
+    peerNodeIt = worker->ClientMap.find(peerFd);
     if (peerNodeIt == worker->ClientMap.end() ||
         peerNodeIt->second->RegisterCtx.Status != SCMsg::SC_MSG_TYPE_REGISTER_FINISH) {
-        sendMsgPayload.mutable_msgbase()->mutable_transmsg()->set_msg("Peer not registered, please wait or check!");
+        sendMsgPayload.msgBase.transMsg.msg = "Peer not registered, please wait or check!";
         ret = -EINVAL;
         LogErr("Peer not registered!");
         goto CommErr;
     }
 
-    sendMsgPayload.mutable_msgbase()->set_msgtype(SCMsg::SC_MSG_TYPE_MSG_TRANS_S_2_C);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_from()->set_clientid(toClientId);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_to()->set_clientid(fromClientId);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->set_msg(transMsg.msg());
+    sendMsgPayload.msgBase.msgType = SCMsg::SC_MSG_TYPE_MSG_TRANS_S_2_C;
+    sendMsgPayload.msgBase.transMsg.from.clientId = toClientId;
+    sendMsgPayload.msgBase.transMsg.to.clientId = fromClientId;
+    sendMsgPayload.msgBase.transMsg.msg = transMsg.msg;
     goto CommRet;
 
 CommErr:
     peerFd = Fd;
-    sendMsgPayload.set_errcode(ECONNREFUSED);
-    sendMsgPayload.mutable_msgbase()->set_msgtype(SCMsg::SC_MSG_TYPE_MSG_TRANS_S_2_C);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_from()->set_clientid(fromClientId);
-    sendMsgPayload.mutable_msgbase()->mutable_transmsg()->mutable_to()->set_clientid(fromClientId);
+    sendMsgPayload.errCode = ECONNREFUSED;
+    sendMsgPayload.msgBase.msgType = SCMsg::SC_MSG_TYPE_MSG_TRANS_S_2_C;
+    sendMsgPayload.msgBase.transMsg.from.clientId = fromClientId;
+    sendMsgPayload.msgBase.transMsg.to.clientId = fromClientId;
 
 CommRet:
     if (SendMsgAsync(sendMsgPayload, peerFd)) {
@@ -350,13 +348,13 @@ ERR_T ServerMsgHandler::DispatchMsg(
     ) 
 {
     ERR_T ret = SUCCESS;
-    switch (MsgPayload.msgbase().msgtype()) {
+    switch (MsgPayload.msgBase.msgType) {
         case SC_MSG_TYPE_REGISTER_REQUEST:
         case SC_MSG_TYPE_REGISTER_CHALLENGE_REPLY:
-            if (ServerWorker->ClientCurrentNum.load() < ServerWorker->InitParam.Load) {
+            if (Worker->ClientCurrentNum.load() < Worker->InitParam.Load) {
                 ret = RegisterClient(Fd, MsgPayload);
             } else {
-                LogWarn("ClientNum has reached its upper limit %u, ignore connect request!", ServerWorker->ClientCurrentNum.load());
+                LogWarn("ClientNum has reached its upper limit %u, ignore connect request!", Worker->ClientCurrentNum.load());
                 ret = -EBUSY;
             }
             break;
@@ -364,15 +362,14 @@ ERR_T ServerMsgHandler::DispatchMsg(
             ret = TransmitMsg(Fd, MsgPayload);
             break;
         default:
-            LogErr("Invalid type:%d", MsgPayload.msgbase().msgtype());
+            LogErr("Invalid type:%d", MsgPayload.msgBase.msgType);
             return -EIO;
     }
     return ret;
 }
 
-ServerMsgHandler::ServerMsgHandler(ServerWorker* Worker):TransId(0){
+ServerMsgHandler::ServerMsgHandler(class ServerWorker* InWorker):TransId(0){
     TransId.fetch_add(1);
-    ServerMsgHandler::ServerWorker = Worker;
+    Worker = InWorker;
 };
 ServerMsgHandler::~ServerMsgHandler(){};
-

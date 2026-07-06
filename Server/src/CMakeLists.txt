@@ -11,7 +11,6 @@ set(THIRD_PARTY_ROOT ${BUILD_ROOT}/../../third_party)
 set(SC_SHARE_ROOT ${BUILD_ROOT}/../../SCShare)
 set(MS_SHARE_ROOT ${BUILD_ROOT}/../../MSShare)
 ######################### global set ########################################
-find_package(Protobuf REQUIRED)
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 ################################ src files ##################################
@@ -20,7 +19,6 @@ set(SOURCES
 	ServerWorker.cpp
 	ServerMsgHandler.cpp
     CommMngrClient.cpp
-    ${MS_SHARE_ROOT}/MSMsg.pb.cc
 )
 add_executable(${PROJECT_NAME} ${SOURCES})
 ############################# include dir ###################################
@@ -32,7 +30,13 @@ include_directories(
 	${THIRD_PARTY_ROOT}/json/include
     ${SC_SHARE_ROOT}/include
     ${MS_SHARE_ROOT}/include
-	${PROTOBUF_INCLUDE_DIRS}
+    ${THIRD_PARTY_ROOT}/GmSSL/include
+)
+
+include_directories(SYSTEM
+    ${THIRD_PARTY_ROOT}/msgpack/cpp/src
+    ${THIRD_PARTY_ROOT}/msgpack/msgpack
+    ${THIRD_PARTY_ROOT}/msgpack
 )
 ############################# cc option ###################################
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -42,6 +46,7 @@ if(MSVC)
 	target_compile_options(${PROJECT_NAME} PRIVATE /W4 /WX)
 endif()
 target_compile_options(${PROJECT_NAME} PRIVATE -g -O0)
+target_link_options(${PROJECT_NAME} PRIVATE -no-pie)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 ############################ lib options ####################################
 ## set link dir
@@ -56,13 +61,15 @@ find_library(GMSSL_LIBRARY NAMES gmssl PATHS ${THIRD_PARTY_ROOT}/GmSSL/build/bin
 # dynamic link others
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_CMAKE_FIND_LIBRARY_SUFFIXES})
 ## link 
+add_subdirectory(${THIRD_PARTY_ROOT}/msgpack ${CMAKE_BINARY_DIR}/msgpack-c)
+
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     ${SCSHARE_LIBRARY} 
 	${UTILS_LIBRARY} 
 	${EVENT_LIBRARY} 
 	${GMSSL_LIBRARY}
-	${PROTOBUF_LIBRARIES}
 	Threads::Threads
     OpenSSL::SSL
     OpenSSL::Crypto
+    msgpack-c
 )

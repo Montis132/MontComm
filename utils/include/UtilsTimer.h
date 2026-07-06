@@ -49,12 +49,12 @@ Util_TimerAdd(
     void* Arg,
     UTIL_TIMER_TYPE TimerType,
     BOOL ActiveNow,
-    __out TIMER_HANDLE *TimerHandle
+     TIMER_HANDLE *TimerHandle
     );
  
 void
 Util_TimerDel(
-    __inout TIMER_HANDLE *TimerHandle
+     TIMER_HANDLE *TimerHandle
     );
 
 int

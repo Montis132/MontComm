@@ -43,10 +43,8 @@ class ClientWorker{
     friend class ClientMsgHandler;
 private:
     int WorkerFd;
-    C_WORKER_STATS State;
     pthread_t MsgThreadId;
     pthread_t StateMachineThreadId;
-    C_WORKER_INIT_PARAM InitParam;
     struct event_base* EventBase;
     struct event* RecvEvent;
     struct event* KeepaliveEvent;
@@ -66,9 +64,14 @@ private:
     ERR_T InitEventBaseAndRun();
     ERR_T StartStateMachine();
 public:
+    C_WORKER_STATS State;
+    C_WORKER_INIT_PARAM InitParam;
     ClientWorker();
     ~ClientWorker();
     ERR_T Init(C_WORKER_INIT_PARAM);
     void Exit();
+    ERR_T SendMsg(uint32_t ClientId, std::string Msg);
+    ClientMsgHandler* GetMsgHandler() const { return MsgHandler; }
+    C_WORKER_STATS GetState() const { return State; }
 };
 #endif /* _CLIENT_WORKER_H_ */

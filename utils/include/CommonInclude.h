@@ -54,24 +54,6 @@ extern "C"{
 #define FALSE                                       0
 #endif
 
-#ifndef __in
-#define __in
-#endif
-#ifndef __in_ecout
-#define __in_ecout(size)
-#endif
-#ifndef __out
-#define __out
-#endif
-#ifndef __out_ecout
-#define __out_ecout(size)
-#endif
-#ifndef __inout
-#define __inout
-#endif
-#ifndef __inout_ecout
-#define __inout_ecout(size)
-#endif
 #ifndef UNUSED
 #define UNUSED(_p_)                              ((void)(_p_))
 #endif

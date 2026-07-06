@@ -11,58 +11,97 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>MontComm Qt Client</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QTableWidget" name="tableWidget">
-    <property name="geometry">
-     <rect>
-      <x>0</x>
-      <y>0</y>
-      <width>801</width>
-      <height>551</height>
-     </rect>
-    </property>
-    <column>
-     <property name="text">
-      <string>动作</string>
-     </property>
-     <property name="textAlignment">
-      <set>AlignCenter</set>
-     </property>
-     <property name="background">
-      <color>
-       <red>170</red>
-       <green>255</green>
-       <blue>255</blue>
-      </color>
-     </property>
-     <property name="foreground">
-      <brush brushstyle="NoBrush">
-       <color alpha="255">
-        <red>0</red>
-        <green>0</green>
-        <blue>0</blue>
-       </color>
-      </brush>
-     </property>
-    </column>
-    <column>
-     <property name="text">
-      <string>结果</string>
-     </property>
-     <property name="textAlignment">
-      <set>AlignCenter</set>
-     </property>
-     <property name="background">
-      <color>
-       <red>170</red>
-       <green>255</green>
-       <blue>127</blue>
-      </color>
-     </property>
-    </column>
-   </widget>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+     <widget class="QGroupBox" name="statusGroupBox">
+      <property name="title">
+       <string>连接状态</string>
+      </property>
+      <layout class="QHBoxLayout" name="horizontalLayout">
+       <item>
+        <widget class="QLabel" name="connectionStatusLabel">
+         <property name="text">
+          <string>未连接</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="clientIdLabel">
+         <property name="text">
+          <string>Client ID: -</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QListWidget" name="serverListWidget">
+         <property name="maximumSize">
+          <set>
+           <width>300</width>
+           <height>80</height>
+          </set>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPlainTextEdit" name="msgLogEdit">
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+      <property name="placeholderText">
+       <string>消息记录...</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QGroupBox" name="sendGroupBox">
+      <property name="title">
+       <string>发送消息</string>
+      </property>
+      <layout class="QHBoxLayout" name="sendLayout">
+       <item>
+        <widget class="QLabel" name="recipientLabel">
+         <property name="text">
+          <string>接收方ID:</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QSpinBox" name="recipientSpinBox">
+         <property name="minimum">
+          <number>0</number>
+         </property>
+         <property name="maximum">
+          <number>999999</number>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="msgLineEdit">
+         <property name="placeholderText">
+          <string>输入消息...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPushButton" name="sendButton">
+         <property name="enabled">
+          <bool>false</bool>
+         </property>
+         <property name="text">
+          <string>发送</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+   </layout>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
@@ -85,9 +124,6 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="Start">
-   <property name="checkable">
-    <bool>false</bool>
-   </property>
    <property name="enabled">
     <bool>true</bool>
    </property>

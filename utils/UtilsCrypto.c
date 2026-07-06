@@ -8,8 +8,8 @@
 
 ERR_T
 Util_CryptRandBytes(
-    __out uint8_t *RandBuf,
-    __inout size_t RandLen
+     uint8_t *RandBuf,
+     size_t RandLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -30,9 +30,9 @@ CommRet:
 
 ERR_T
 Util_CryptSm2KeyGenAndExport(
-    __in const char *PubKeyPath,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd
+     const char *PubKeyPath,
+     const char *PriKeyPath,
+     const char *PriKeyPwd
     )
 {
     ERR_T ret = SUCCESS;
@@ -71,8 +71,8 @@ CommRet:
 
 ERR_T
 Util_CryptSm2ImportPubKey(
-    __in const char *PubKeyPath,
-    __out SM2_KEY *PubKey
+     const char *PubKeyPath,
+     SM2_KEY *PubKey
     )
 {
     ERR_T ret = SUCCESS;
@@ -104,12 +104,12 @@ CommRet:
 
 ERR_T
 Util_CryptSm2Sign(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd,
-    __out uint8_t *Sign,
-    __inout size_t *SignLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const char *PriKeyPath,
+     const char *PriKeyPwd,
+     uint8_t *Sign,
+     size_t *SignLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -163,11 +163,11 @@ CommRet:
 
 ERR_T
 Util_CryptSm2Verify(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const SM2_KEY *PubKey,
-    __in const uint8_t *Sign,
-    __in size_t SignLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const SM2_KEY *PubKey,
+     const uint8_t *Sign,
+     size_t SignLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -193,11 +193,11 @@ CommRet:
 
 ERR_T
 Util_CryptSm2Encrypt(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const SM2_KEY *PubKey,
-    __out uint8_t *Cipher,
-    __inout size_t *CipherLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const SM2_KEY *PubKey,
+     uint8_t *Cipher,
+     size_t *CipherLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -219,12 +219,12 @@ CommRet:
 
 ERR_T
 Util_CryptSm2Decrypt(
-    __in const uint8_t *Cipher,
-    __in size_t CipherLen,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd,
-    __out uint8_t *Plain,
-    __inout size_t *PlainLen
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const char *PriKeyPath,
+     const char *PriKeyPwd,
+     uint8_t *Plain,
+     size_t *PlainLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -263,10 +263,10 @@ CommRet:
 
 ERR_T
 Util_CryptSm3Hash(
-    __in const uint8_t *Input,
-    __in size_t InputLen,
-    __out uint8_t *Hash,
-    __inout size_t *HashLen
+     const uint8_t *Input,
+     size_t InputLen,
+     uint8_t *Hash,
+     size_t *HashLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -283,9 +283,147 @@ CommRet:
     return ret;
 }
 
+ERR_T
+Util_CryptSm3Hmac(
+     const uint8_t *Key,
+     size_t KeyLen,
+     const uint8_t *Input,
+     size_t InputLen,
+     uint8_t *Hmac,
+     size_t *HmacLen
+    )
+{
+    ERR_T ret = SUCCESS;
+
+    if (!Key || !KeyLen || !Input || !InputLen || !Hmac || !HmacLen || *HmacLen < UTIL_CRYPT_SM3_HMAC_LEN) {
+        ret = -EINVAL;
+        goto CommRet;
+    }
+
+    sm3_hmac(Key, KeyLen, Input, InputLen, Hmac);
+    *HmacLen = UTIL_CRYPT_SM3_HMAC_LEN;
+
+CommRet:
+    return ret;
+}
+
+size_t
+Util_CryptSm4ECBGetPaddedLen(
+     size_t PlainLen
+    )
+{
+    return PlainLen % SM4_BLOCK_SIZE == 0 ? PlainLen : (PlainLen / SM4_BLOCK_SIZE + 1) * SM4_BLOCK_SIZE;
+}
+
+static void _sm4_ecb_padding_encrypt(const SM4_KEY *key, const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen)
+{
+    size_t blocks = (inlen + SM4_BLOCK_SIZE - 1) / SM4_BLOCK_SIZE;
+    size_t i;
+    uint8_t block[SM4_BLOCK_SIZE];
+    size_t paddedLen = blocks * SM4_BLOCK_SIZE;
+
+    for (i = 0; i < blocks; i++) {
+        size_t remain = inlen - i * SM4_BLOCK_SIZE;
+        if (remain >= SM4_BLOCK_SIZE) {
+            sm4_encrypt(key, in + i * SM4_BLOCK_SIZE, out + i * SM4_BLOCK_SIZE);
+        } else {
+            memset(block, 0, SM4_BLOCK_SIZE);
+            memcpy(block, in + i * SM4_BLOCK_SIZE, remain);
+            block[remain] = 0x80;
+            sm4_encrypt(key, block, out + i * SM4_BLOCK_SIZE);
+        }
+    }
+    *outlen = paddedLen;
+}
+
+static int _sm4_ecb_padding_decrypt(const SM4_KEY *key, const uint8_t *in, size_t inlen, uint8_t *out, size_t *outlen)
+{
+    size_t i, plainLen;
+
+    if (inlen % SM4_BLOCK_SIZE != 0 || inlen == 0) {
+        return -1;
+    }
+
+    for (i = 0; i < inlen / SM4_BLOCK_SIZE; i++) {
+        sm4_encrypt(key, in + i * SM4_BLOCK_SIZE, out + i * SM4_BLOCK_SIZE);
+    }
+
+    plainLen = inlen;
+    for (i = inlen - 1; i > 0; i--) {
+        if (out[i] == 0x80) {
+            plainLen = i;
+            break;
+        }
+        if (out[i] != 0x00) {
+            break;
+        }
+    }
+    if (plainLen == inlen) {
+        return -1;
+    }
+
+    *outlen = plainLen;
+    return 1;
+}
+
+ERR_T
+Util_CryptSm4ECBEncrypt(
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Cipher,
+     size_t *CipherLen
+    )
+{
+    ERR_T ret = SUCCESS;
+    SM4_KEY sm4Key;
+
+    if (!Plain || !PlainLen || !Key || KeyLen != UTIL_CRYPT_SM4_KEY_LEN || !Cipher || !CipherLen ||
+        *CipherLen < Util_CryptSm4ECBGetPaddedLen(PlainLen)) {
+        ret = -EINVAL;
+        goto CommRet;
+    }
+
+    sm4_set_encrypt_key(&sm4Key, Key);
+    _sm4_ecb_padding_encrypt(&sm4Key, Plain, PlainLen, Cipher, CipherLen);
+
+CommRet:
+    return ret;
+}
+
+ERR_T
+Util_CryptSm4ECBDecrypt(
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Plain,
+     size_t *PlainLen
+    )
+{
+    ERR_T ret = SUCCESS;
+    SM4_KEY sm4Key;
+
+    if (!Plain || !PlainLen || !Key || KeyLen != UTIL_CRYPT_SM4_KEY_LEN || !Cipher || !CipherLen) {
+        ret = -EINVAL;
+        goto CommRet;
+    }
+
+    sm4_set_decrypt_key(&sm4Key, Key);
+    if (_sm4_ecb_padding_decrypt(&sm4Key, Cipher, CipherLen, Plain, PlainLen) != 1) {
+        ret = -EIO;
+        LogErr("sm4 ecb padding decrypt failed!");
+        goto CommRet;
+    }
+
+CommRet:
+    return ret;
+}
+
 size_t
 Util_CryptSm4CBCGetPaddedLen(
-    __in size_t PlainLen
+     size_t PlainLen
     )
 {
     return PlainLen % 16 == 0 ? (PlainLen + 16) : (PlainLen/16 + 1) * 16;
@@ -293,14 +431,14 @@ Util_CryptSm4CBCGetPaddedLen(
 
 ERR_T
 Util_CryptSm4CBCEncrypt(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const uint8_t *Key,
-    __in size_t KeyLen,
-    __out uint8_t *Cipher,
-    __inout size_t *CipherLen,
-    __out uint8_t *Iv,
-    __inout size_t *IvLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Cipher,
+     size_t *CipherLen,
+     uint8_t *Iv,
+     size_t *IvLen
     )
 {
     ERR_T ret = SUCCESS;
@@ -332,14 +470,14 @@ CommRet:
 
 ERR_T
 Util_CryptSm4CBCDecrypt(
-    __in const uint8_t *Cipher,
-    __in size_t CipherLen,
-    __in const uint8_t *Key,
-    __in size_t KeyLen,
-    __in uint8_t *Iv,
-    __in size_t IvLen,
-    __out uint8_t *Plain,
-    __inout size_t *PlainLen
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Iv,
+     size_t IvLen,
+     uint8_t *Plain,
+     size_t *PlainLen
     )
 {
     ERR_T ret = SUCCESS;

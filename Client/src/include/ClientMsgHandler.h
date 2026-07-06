@@ -2,7 +2,7 @@
 #define _CLIENT_MSG_HANDLER_H_
 
 #include <atomic>
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "UtilsCommonUtil.h"
 
 class ClientWorker;
@@ -10,9 +10,9 @@ class ClientWorker;
 class ClientMsgHandler{
 private:
     std::atomic<uint32_t> TransId;
-    ClientWorker* ClientWorker;
+    ClientWorker* worker;
 public:
-    ClientMsgHandler(ClientWorker*);
+    ClientMsgHandler(ClientWorker* Worker);
     ~ClientMsgHandler();
     void ProtoInitMsg(SCMsg::MsgPayload&);
     void ProtoPreSend(SCMsg::MsgPayload&);

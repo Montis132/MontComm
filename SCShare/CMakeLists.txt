@@ -7,11 +7,10 @@ set(BUILD_ROOT .)
 set(THIRD_PARTY_ROOT ${BUILD_ROOT}/../third_party)
 set(UTILS_ROOT ${BUILD_ROOT}/../utils)
 ################################ src files ##################################
+find_package(OpenSSL REQUIRED)
 set(SOURCES
-    SCMsg.pb.cc
     SCShareCommon.cpp
 )
-find_package(Protobuf REQUIRED)
 ############################# include dir ###################################
 include_directories(
     ${BUILD_ROOT}/include
@@ -19,7 +18,14 @@ include_directories(
 	${THIRD_PARTY_ROOT}/json/include
     ${THIRD_PARTY_ROOT}/libevent/include
     ${THIRD_PARTY_ROOT}/libevent/build/include
-    ${PROTO_MSG_ROOT}
+    ${THIRD_PARTY_ROOT}/GmSSL/include
+    ${OPENSSL_INCLUDE_DIR}
+)
+
+include_directories(SYSTEM
+    ${THIRD_PARTY_ROOT}/msgpack/cpp/src
+    ${THIRD_PARTY_ROOT}/msgpack/msgpack
+    ${THIRD_PARTY_ROOT}/msgpack
 )
 ############################ target rules ###################################
 # lib options
@@ -30,6 +36,8 @@ else ()
     add_library(${PROJECT_NAME} STATIC ${SOURCES})
 endif ()
 target_compile_options(${PROJECT_NAME} PRIVATE -g -O0)
+add_subdirectory(${THIRD_PARTY_ROOT}/msgpack ${CMAKE_BINARY_DIR}/msgpack-c)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto msgpack-c)
 set_target_properties(${PROJECT_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )

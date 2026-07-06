@@ -49,14 +49,10 @@ BuildUtils()
 }
 BuildShare()
 {
-    echo "Build proto"
+    echo "Build SCShare"
     pushd SCShare > /dev/null
     ./scshare_build.sh
     popd > /dev/null
-
-	pushd MSShare > /dev/null
-	./msshare_build.sh
-	popd > /dev/null
 }
 BuildServer()
 {

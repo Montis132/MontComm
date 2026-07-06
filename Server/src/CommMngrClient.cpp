@@ -7,7 +7,7 @@
 
 #include "UtilsModuleCommon.h"
 #include "UtilsCommonUtil.h"
-#include "MSMsg.pb.h"
+#include "MSMsg.h"
 #include "CommMngrClient.h"
 #include "SCShare.h"
 
@@ -163,11 +163,11 @@ void CommMngrClient::_RecvMsg(evutil_socket_t Fd, short Event, void *Arg) {
         }
         goto CommRet;
     }
-    if (!msgPayload.ParseFromArray(buffer, ret)) {
+    if (!MSMsg::MsgPayloadDecodeFromBuf(msgPayload, (uint8_t*)buffer, ret)) {
         LogErr("parse form array failed!");
         goto CommRet;
     }
-    LogInfo("Recv msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Recv msg: %s", MSMsg::MsgPayloadToString(msgPayload).c_str());
     // handle msg
 
 CommRet:
@@ -211,14 +211,14 @@ void CommMngrClient::_HealthMonitor(evutil_socket_t Fd, short Event, void *Arg) 
     static uint64_t oldTotalTime = 0, oldIdleTime = 0;
     uint64_t newTotalTime = 0, newIdleTime = 0;
     MSMsg::MsgPayload msgPayload;
-    std::string serializedData;
+
     ERR_T ret = SUCCESS;
     std::string httpRequest;
     float memUsage = 0;
 
     UNUSED(Fd);
     UNUSED(Event);
-    msgPayload.mutable_msgbase()->set_msgtype(MSMsg::MS_MSG_TYPE_SVR_HEALTH_REPORT);
+    msgPayload.msgBase.msgType = MSMsg::MS_MSG_TYPE_SVR_HEALTH_REPORT;
 
     if (worker->State != MNGR_CLIENT_STATS_CONNECTED) {
         LogInfo("Not connected, return");
@@ -232,25 +232,24 @@ void CommMngrClient::_HealthMonitor(evutil_socket_t Fd, short Event, void *Arg) 
     if (ret < SUCCESS) {
         return ;
     }
-    msgPayload.mutable_msgbase()->mutable_svrhealthreport()->set_memusage(memUsage);
+    msgPayload.msgBase.svrHealthReport.memUsage = memUsage;
 
     if (oldTotalTime != 0 || oldIdleTime != 0) {
         float cpuUsage = 0;
         if (newTotalTime > oldTotalTime) {
             cpuUsage = 1.0 - (float)(newIdleTime - oldIdleTime)/(float)(newTotalTime - oldTotalTime);
             cpuUsage *= 100;
-            msgPayload.mutable_msgbase()->mutable_svrhealthreport()->set_cpuusage(cpuUsage);
+            msgPayload.msgBase.svrHealthReport.cpuUsage = cpuUsage;
         } else {
             cpuUsage = 0;
-            msgPayload.mutable_msgbase()->mutable_svrhealthreport()->set_cpuusage(cpuUsage); // if 0, must be cleared
-            msgPayload.mutable_msgbase()->mutable_svrhealthreport()->clear_cpuusage();
+            msgPayload.msgBase.svrHealthReport.cpuUsage = cpuUsage;
         }
     }
     oldTotalTime = newTotalTime;
     oldIdleTime = newIdleTime;
 
-    serializedData = msgPayload.SerializeAsString();
-    ret = SSL_write(worker->ClientSSL, serializedData.data(), serializedData.size());
+    uint8_t msgpackBuf[4096]; size_t msgpackLen = MSMsg::MsgPayloadEncodeToBuf(msgPayload, msgpackBuf, sizeof(msgpackBuf));
+    ret = SSL_write(worker->ClientSSL, msgpackBuf, msgpackLen);
     if (ret <= 0)
     {
         ret = SSLErrorShow(worker->ClientSSL, ret);
@@ -260,10 +259,10 @@ void CommMngrClient::_HealthMonitor(evutil_socket_t Fd, short Event, void *Arg) 
         }
         goto CommRet;
     }
-    LogInfo("Send Msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Send Msg: %s", MSMsg::MsgPayloadToString(msgPayload).c_str());
     
 CommRet:
-    assert(NULL != msgPayload.release_msgbase());
+    // msgPayload auto-released
     return ;
 }
 

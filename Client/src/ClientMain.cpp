@@ -5,7 +5,7 @@
 
 #include "UtilsModuleCommon.h"
 #include "SCShare.h"
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "ClientWorker.h"
 
 using namespace std;
@@ -63,6 +63,9 @@ static ERR_T _C_MainGetSpecailConfFromJson(
         InitParam.CryptoSuite = SCMsg::SC_CIPHER_SUITE_SM4;
     } else {
         InitParam.CryptoSuite = SCMsg::SC_CIPHER_SUITE_NONE;
+    }
+    if (FileJson["ClientConf"].contains("CommMngrUrl") && !FileJson["ClientConf"]["CommMngrUrl"].is_null()) {
+        InitParam.CommMngrUrl = FileJson["ClientConf"]["CommMngrUrl"];
     }
     return SUCCESS;
 }

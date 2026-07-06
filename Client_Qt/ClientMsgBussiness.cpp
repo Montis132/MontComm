@@ -2,6 +2,7 @@
 
 #include "ClientMsgBussiness.h"
 #include "ClientWorker.h"
+#include "SCMsg.h"
 
 using namespace SCMsg;
 
@@ -11,10 +12,8 @@ void ClientMsgHandler::ProtoInitMsg(
     )
 {
     assert(NULL != Worker);
-    assert(NULL != MsgPayload.mutable_msgbase());
-    assert(NULL != MsgPayload.mutable_clientinfo());
-    MsgPayload.set_transid(TransId.load());
-    MsgPayload.mutable_clientinfo()->set_clientid(Worker->InitParam.ClientId);
+    MsgPayload.transId = TransId.load();
+    MsgPayload.clientInfo.clientId = Worker->InitParam.ClientId;
 }
 
 void ClientMsgHandler::ProtoPreSend(MsgPayload &MsgPayload) {
@@ -23,13 +22,11 @@ void ClientMsgHandler::ProtoPreSend(MsgPayload &MsgPayload) {
     auto value = nowMs.time_since_epoch();
     long timestamp = value.count();
 
-    MsgPayload.set_timestamp(timestamp);
+    MsgPayload.timestamp = timestamp;
     TransId.fetch_add(1);
 }
 
 void ClientMsgHandler::ProtoRelease(MsgPayload &MsgPayload) {
-    assert(NULL != MsgPayload.release_msgbase());
-    assert(NULL != MsgPayload.release_clientinfo());
 }
 
 void ClientMsgHandler::CreateRegisterProtoMsg(
@@ -37,19 +34,26 @@ void ClientMsgHandler::CreateRegisterProtoMsg(
     MsgBase &MsgBase
     ) 
 {
-    MsgBase.set_msgtype(SC_MSG_TYPE_REGISTER);
-    MsgBase.mutable_clientregister()->set_clientid(Worker->InitParam.ClientId);
+    MsgBase.msgType = SC_MSG_TYPE_REGISTER_REQUEST;
+    MsgBase.registerRequest.clientId = Worker->InitParam.ClientId;
 }
 
 ERR_T ClientMsgHandler::DispatchMsg(ClientWorker* Worker, MsgPayload MsgPayload) {
-    switch (MsgPayload.msgbase().msgtype()) {
+    switch (MsgPayload.msgBase.msgType) {
         case SC_MSG_TYPE_REGISTER_REPLY:
-            if (MsgPayload.msgbase().clientregisterreply().errcode() == SUCCESS) {
+            if (MsgPayload.errCode == SUCCESS) {
                 Worker->State = C_WORKER_STATS_REGISTERED;
                 Worker->RegisterRetried = 0;
+                emit registered(Worker->InitParam.ClientId);
+                emit stateChanged(C_WORKER_STATS_REGISTERED);
             } else {
-                LogErr("Register replies as fail! errcode %d", MsgPayload.msgbase().clientregisterreply().errcode());
+                emit errorOccurred(QString("Register failed: errCode %1").arg(MsgPayload.errCode));
+                LogErr("Register replies as fail! errcode %d", MsgPayload.errCode);
             } 
+            break;
+        case SC_MSG_TYPE_MSG_TRANS_S_2_C:
+            emit msgReceived(MsgPayload.msgBase.transMsg.from.clientId,
+                QString::fromStdString(MsgPayload.msgBase.transMsg.msg));
             break;
         default:
             break;
@@ -58,7 +62,7 @@ ERR_T ClientMsgHandler::DispatchMsg(ClientWorker* Worker, MsgPayload MsgPayload)
     return SUCCESS;
 }
 
-ClientMsgHandler::ClientMsgHandler():TransId(0){
+ClientMsgHandler::ClientMsgHandler(QObject *parent):QObject(parent), TransId(0){
     TransId.fetch_add(1);
 };
 ClientMsgHandler::~ClientMsgHandler(){};

@@ -109,7 +109,7 @@ CommonReturn:
 int
 Util_RecvMsg(
     int Fd,
-    __inout UTIL_MSG *RetMsg
+     UTIL_MSG *RetMsg
     )
 {
     int ret = SUCCESS;
@@ -505,7 +505,7 @@ Util_ClearMsgCont(
 int
 Util_RecvQMsg(
     int Fd,
-    __inout UTIL_Q_MSG *RetMsg
+     UTIL_Q_MSG *RetMsg
     )
 {
     int ret = SUCCESS;
@@ -785,4 +785,324 @@ CommonReturn:
         pthread_spin_unlock(&sg_MsgStats.Lock);
     }
     return ret;
+}
+
+#define UTIL_MSG_FRAG_MAGIC          0x4D4F4E54u
+#define UTIL_MSG_FRAG_HEADER_LEN    20
+#define UTIL_MSG_FRAG_MAX_CTX       64
+#define UTIL_MSG_FRAG_TIMEOUT_MS    30000
+
+typedef struct _FRAG_CTX
+{
+    int Fd;
+    uint32_t FragmentId;
+    uint32_t TotalFragments;
+    uint32_t TotalContentLen;
+    uint32_t ReceivedCount;
+    uint8_t *Bitmap;
+    uint8_t *Data;
+    uint64_t CreatedTimeMs;
+    BOOL InUse;
+}
+FRAG_CTX;
+
+static FRAG_CTX sg_FragCtx[UTIL_MSG_FRAG_MAX_CTX];
+static pthread_spinlock_t sg_FragLock;
+static BOOL sg_FragInited = FALSE;
+
+static void
+_FragInit(
+    void
+    )
+{
+    if (!sg_FragInited)
+    {
+        memset(sg_FragCtx, 0, sizeof(sg_FragCtx));
+        pthread_spin_init(&sg_FragLock, PTHREAD_PROCESS_PRIVATE);
+        sg_FragInited = TRUE;
+    }
+}
+
+static uint32_t
+_NextFragId(
+    void
+    )
+{
+    static uint32_t s_Counter = 0;
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (((uint32_t)(tv.tv_sec & 0xFFFF) << 16) | (uint32_t)(tv.tv_usec & 0xFFFF)) ^ (++s_Counter);
+}
+
+static FRAG_CTX*
+_FindFragCtx(
+    int Fd,
+    uint32_t FragId
+    )
+{
+    int i;
+    for (i = 0; i < UTIL_MSG_FRAG_MAX_CTX; i++)
+    {
+        if (sg_FragCtx[i].InUse && sg_FragCtx[i].Fd == Fd && sg_FragCtx[i].FragmentId == FragId)
+        {
+            return &sg_FragCtx[i];
+        }
+    }
+    return NULL;
+}
+
+static FRAG_CTX*
+_AllocFragCtx(
+    void
+    )
+{
+    int i;
+    for (i = 0; i < UTIL_MSG_FRAG_MAX_CTX; i++)
+    {
+        if (!sg_FragCtx[i].InUse)
+        {
+            return &sg_FragCtx[i];
+        }
+    }
+    return NULL;
+}
+
+static void
+_FreeFragCtx(
+    FRAG_CTX *Ctx
+    )
+{
+    if (Ctx)
+    {
+        if (Ctx->Bitmap) _MsgFree(Ctx->Bitmap);
+        if (Ctx->Data) _MsgFree(Ctx->Data);
+        memset(Ctx, 0, sizeof(FRAG_CTX));
+    }
+}
+
+static UTIL_Q_MSG*
+_MsgRecvToSend(
+    UTIL_Q_MSG *RecvMsg
+    )
+{
+    UTIL_Q_MSG *sendMsg = Util_NewSendQMsg(RecvMsg->Head.ContentLen);
+    if (sendMsg)
+    {
+        memcpy(sendMsg->Cont.VarLenCont, RecvMsg->Cont.VarLenCont, RecvMsg->Head.ContentLen);
+    }
+    Util_FreeRecvQMsg(RecvMsg);
+    return sendMsg;
+}
+
+int
+Util_SendQMsgFragmented(
+    int Fd,
+    UTIL_Q_MSG *Msg
+    )
+{
+    int ret = 0;
+    uint32_t totalLen;
+    uint32_t fragId;
+    uint32_t totalFrags;
+    uint32_t fragDataLen;
+    uint32_t i;
+    uint32_t offset;
+    uint32_t thisFragDataLen;
+    uint32_t fragContLen;
+    UTIL_Q_MSG *fragMsg;
+    uint32_t *hdr;
+
+    if (!sg_MsgStats.Inited || !Msg || !Msg->Cont.VarLenCont)
+    {
+        ret = -EINVAL;
+        goto CommonReturn;
+    }
+
+    totalLen = Msg->Head.ContentLen;
+    if (totalLen <= UTIL_MSG_FRAGMENT_SIZE)
+    {
+        ret = Util_SendQMsg(Fd, Msg);
+        if (ret == 0) ret = (int)totalLen;
+        goto CommonReturn;
+    }
+
+    _FragInit();
+    fragId = _NextFragId();
+    fragDataLen = UTIL_MSG_FRAGMENT_SIZE;
+    totalFrags = (totalLen + fragDataLen - 1) / fragDataLen;
+
+    for (i = 0; i < totalFrags; i++)
+    {
+        offset = i * fragDataLen;
+        thisFragDataLen = (i == totalFrags - 1) ? (totalLen - offset) : fragDataLen;
+        fragContLen = UTIL_MSG_FRAG_HEADER_LEN + thisFragDataLen;
+
+        fragMsg = Util_NewSendQMsg(fragContLen);
+        if (!fragMsg)
+        {
+            ret = -ENOBUFS;
+            goto CommonReturn;
+        }
+
+        hdr = (uint32_t*)fragMsg->Cont.VarLenCont;
+        hdr[0] = htonl(UTIL_MSG_FRAG_MAGIC);
+        hdr[1] = htonl(fragId);
+        hdr[2] = htonl(totalFrags);
+        hdr[3] = htonl(i);
+        hdr[4] = htonl(totalLen);
+        memcpy(fragMsg->Cont.VarLenCont + UTIL_MSG_FRAG_HEADER_LEN, Msg->Cont.VarLenCont + offset, thisFragDataLen);
+
+        ret = Util_SendQMsg(Fd, fragMsg);
+        Util_FreeSendQMsg(fragMsg);
+        if (ret < 0)
+        {
+            goto CommonReturn;
+        }
+    }
+    ret = (int)totalLen;
+
+CommonReturn:
+    return ret;
+}
+
+UTIL_Q_MSG*
+Util_RecvQMsgFragmented(
+    int Fd
+    )
+{
+    UTIL_Q_MSG *recvMsg = NULL;
+    UTIL_Q_MSG *result = NULL;
+    int ret;
+    uint32_t *hdr;
+    uint32_t magic;
+    uint32_t fragId;
+    uint32_t totalFrags;
+    uint32_t fragIdx;
+    uint32_t totalLen;
+    uint32_t fragDataLen;
+    FRAG_CTX *ctx;
+    uint32_t byteIdx;
+    uint8_t bitMask;
+    struct timeval tv;
+
+    if (!sg_MsgStats.Inited)
+    {
+        return NULL;
+    }
+
+    _FragInit();
+
+    recvMsg = Util_NewRecvQMsg();
+    if (!recvMsg)
+    {
+        return NULL;
+    }
+
+    ret = Util_RecvQMsg(Fd, recvMsg);
+    if (ret < 0)
+    {
+        Util_FreeRecvQMsg(recvMsg);
+        return NULL;
+    }
+
+    if (recvMsg->Head.ContentLen >= UTIL_MSG_FRAG_HEADER_LEN)
+    {
+        hdr = (uint32_t*)recvMsg->Cont.VarLenCont;
+        magic = ntohl(hdr[0]);
+        if (magic == UTIL_MSG_FRAG_MAGIC)
+        {
+            fragId = ntohl(hdr[1]);
+            totalFrags = ntohl(hdr[2]);
+            fragIdx = ntohl(hdr[3]);
+            totalLen = ntohl(hdr[4]);
+            fragDataLen = recvMsg->Head.ContentLen - UTIL_MSG_FRAG_HEADER_LEN;
+
+            pthread_spin_lock(&sg_FragLock);
+            ctx = _FindFragCtx(Fd, fragId);
+            if (!ctx)
+            {
+                ctx = _AllocFragCtx();
+                if (ctx)
+                {
+                    gettimeofday(&tv, NULL);
+                    ctx->InUse = TRUE;
+                    ctx->Fd = Fd;
+                    ctx->FragmentId = fragId;
+                    ctx->TotalFragments = totalFrags;
+                    ctx->TotalContentLen = totalLen;
+                    ctx->ReceivedCount = 0;
+                    ctx->CreatedTimeMs = (uint64_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+                    ctx->Data = (uint8_t*)_MsgCalloc(totalLen);
+                    ctx->Bitmap = (uint8_t*)_MsgCalloc((totalFrags + 7) / 8);
+                    if (!ctx->Data || !ctx->Bitmap)
+                    {
+                        _FreeFragCtx(ctx);
+                        ctx = NULL;
+                    }
+                }
+            }
+
+            if (!ctx)
+            {
+                pthread_spin_unlock(&sg_FragLock);
+                Util_FreeRecvQMsg(recvMsg);
+                return NULL;
+            }
+
+            byteIdx = fragIdx / 8;
+            bitMask = (uint8_t)(1 << (fragIdx % 8));
+            if (!(ctx->Bitmap[byteIdx] & bitMask))
+            {
+                ctx->Bitmap[byteIdx] |= bitMask;
+                ctx->ReceivedCount++;
+                memcpy(ctx->Data + fragIdx * UTIL_MSG_FRAGMENT_SIZE,
+                       recvMsg->Cont.VarLenCont + UTIL_MSG_FRAG_HEADER_LEN, fragDataLen);
+            }
+
+            if (ctx->ReceivedCount == ctx->TotalFragments)
+            {
+                result = Util_NewSendQMsg(ctx->TotalContentLen);
+                if (result)
+                {
+                    memcpy(result->Cont.VarLenCont, ctx->Data, ctx->TotalContentLen);
+                }
+                _FreeFragCtx(ctx);
+            }
+
+            pthread_spin_unlock(&sg_FragLock);
+            Util_FreeRecvQMsg(recvMsg);
+            return result;
+        }
+    }
+
+    result = _MsgRecvToSend(recvMsg);
+    return result;
+}
+
+void
+Util_MsgFragCleanup(
+    void
+    )
+{
+    uint64_t now;
+    struct timeval tv;
+    int i;
+
+    if (!sg_FragInited) return;
+
+    gettimeofday(&tv, NULL);
+    now = (uint64_t)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+
+    pthread_spin_lock(&sg_FragLock);
+    for (i = 0; i < UTIL_MSG_FRAG_MAX_CTX; i++)
+    {
+        if (sg_FragCtx[i].InUse)
+        {
+            if (now - sg_FragCtx[i].CreatedTimeMs > UTIL_MSG_FRAG_TIMEOUT_MS)
+            {
+                _FreeFragCtx(&sg_FragCtx[i]);
+            }
+        }
+    }
+    pthread_spin_unlock(&sg_FragLock);
 }

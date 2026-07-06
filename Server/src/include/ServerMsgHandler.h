@@ -2,7 +2,7 @@
 #define _SERVER_MSG_HANDLER_H_
 
 #include <atomic>
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "UtilsCommonUtil.h"
 
 class ServerWorker;
@@ -13,7 +13,7 @@ private:
     ERR_T RegisterClient(int32_t, const SCMsg::MsgPayload);
     ERR_T SendMsgAsync(const SCMsg::MsgPayload, int32_t);
     ERR_T TransmitMsg(int32_t, const SCMsg::MsgPayload);
-    ServerWorker* ServerWorker;
+    class ServerWorker* Worker;
 public:
     ServerMsgHandler(ServerWorker*);
     ~ServerMsgHandler();

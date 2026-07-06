@@ -20,96 +20,131 @@ extern "C"{
 
 ERR_T
 Util_CryptRandBytes(
-    __out uint8_t *RandBuf,
-    __inout size_t RandLen
+     uint8_t *RandBuf,
+     size_t RandLen
     );
 
 ERR_T
 Util_CryptSm2KeyGenAndExport(
-    __in const char *PubKeyPath,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd
+     const char *PubKeyPath,
+     const char *PriKeyPath,
+     const char *PriKeyPwd
     );
     
 ERR_T
 Util_CryptSm2ImportPubKey(
-    __in const char *PubKeyPath,
-    __out SM2_KEY *PubKey
+     const char *PubKeyPath,
+     SM2_KEY *PubKey
     );
 
 ERR_T
 Util_CryptSm2Sign(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd,
-    __out uint8_t *Sign,
-    __inout size_t *SignLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const char *PriKeyPath,
+     const char *PriKeyPwd,
+     uint8_t *Sign,
+     size_t *SignLen
     );
 
 ERR_T
 Util_CryptSm2Verify(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const SM2_KEY *PubKey,
-    __in const uint8_t *Sign,
-    __in size_t SignLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const SM2_KEY *PubKey,
+     const uint8_t *Sign,
+     size_t SignLen
     );
 
 ERR_T
 Util_CryptSm2Encrypt(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const SM2_KEY *PubKey,
-    __out uint8_t *Cipher,
-    __inout size_t *CipherLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const SM2_KEY *PubKey,
+     uint8_t *Cipher,
+     size_t *CipherLen
     );
 
 ERR_T
 Util_CryptSm2Decrypt(
-    __in const uint8_t *Cipher,
-    __in size_t CipherLen,
-    __in const char *PriKeyPath,
-    __in const char *PriKeyPwd,
-    __out uint8_t *Plain,
-    __inout size_t *PlainLen
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const char *PriKeyPath,
+     const char *PriKeyPwd,
+     uint8_t *Plain,
+     size_t *PlainLen
     );
 
 ERR_T
 Util_CryptSm3Hash(
-    __in const uint8_t *Input,
-    __in size_t InputLen,
-    __out uint8_t *Hash,
-    __inout size_t *HashLen
+     const uint8_t *Input,
+     size_t InputLen,
+     uint8_t *Hash,
+     size_t *HashLen
+    );
+
+ERR_T
+Util_CryptSm3Hmac(
+     const uint8_t *Key,
+     size_t KeyLen,
+     const uint8_t *Input,
+     size_t InputLen,
+     uint8_t *Hmac,
+     size_t *HmacLen
+    );
+
+size_t
+Util_CryptSm4ECBGetPaddedLen(
+     size_t PlainLen
+    );
+
+ERR_T
+Util_CryptSm4ECBEncrypt(
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Cipher,
+     size_t *CipherLen
+    );
+
+ERR_T
+Util_CryptSm4ECBDecrypt(
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Plain,
+     size_t *PlainLen
     );
 
 size_t
 Util_CryptSm4CBCGetPaddedLen(
-    __in size_t PlainLen
+     size_t PlainLen
     );
 
 ERR_T
 Util_CryptSm4CBCEncrypt(
-    __in const uint8_t *Plain,
-    __in size_t PlainLen,
-    __in const uint8_t *Key,
-    __in size_t KeyLen,
-    __out uint8_t *Cipher,
-    __inout size_t *CipherLen,
-    __out uint8_t *Iv,
-    __inout size_t *IvLen
+     const uint8_t *Plain,
+     size_t PlainLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Cipher,
+     size_t *CipherLen,
+     uint8_t *Iv,
+     size_t *IvLen
     );
 
 ERR_T
 Util_CryptSm4CBCDecrypt(
-    __in const uint8_t *Cipher,
-    __in size_t CipherLen,
-    __in const uint8_t *Key,
-    __in size_t KeyLen,
-    __in uint8_t *Iv,
-    __in size_t IvLen,
-    __out uint8_t *Plain,
-    __inout size_t *PlainLen
+     const uint8_t *Cipher,
+     size_t CipherLen,
+     const uint8_t *Key,
+     size_t KeyLen,
+     uint8_t *Iv,
+     size_t IvLen,
+     uint8_t *Plain,
+     size_t *PlainLen
     );
 
 #ifdef __cplusplus

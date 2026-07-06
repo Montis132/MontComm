@@ -1,6 +1,6 @@
 #include <filesystem>
 
-#include "SCMsg.pb.h"
+#include "SCMsg.h"
 #include "ServerWorker.h"
 
 using namespace std;
@@ -188,7 +188,7 @@ void ServerWorker::ClientRecv(int32_t Fd) {
     }
     auto *regCtx = &it->second->RegisterCtx;
     if (regCtx->Status != SCMsg::SC_MSG_TYPE_REGISTER_FINISH) {
-        if (!msgPayload.ParseFromArray(recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
+        if (!SCMsg::MsgPayloadDecodeFromBuf(msgPayload, recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
             LogErr("parse form array failed!");
             goto CommRet;
         }
@@ -205,7 +205,7 @@ void ServerWorker::ClientRecv(int32_t Fd) {
             LogErr("decrypt msg failed!");
             goto CommRet;
         }
-        if (!msgPayload.ParseFromArray(msgPlain, msgPlainLen)) {
+        if (!SCMsg::MsgPayloadDecodeFromBuf(msgPayload, msgPlain, msgPlainLen)) {
             LogErr("parse form array failed!");
             goto CommRet;
         }
@@ -215,7 +215,7 @@ void ServerWorker::ClientRecv(int32_t Fd) {
         goto CommRet;
     }
     }
-    LogInfo("[%s]recv msg: %s", InitParam.Name.c_str(), msgPayload.ShortDebugString().c_str());
+    LogInfo("[%s]recv msg: %s", InitParam.Name.c_str(), SCMsg::MsgPayloadToString(msgPayload).c_str());
     ret = MsgHandler->DispatchMsg(Fd, msgPayload);
     if (ret < 0) {
         LogErr("dispatch msg failed! ret %d", ret);
@@ -226,6 +226,28 @@ CommRet:
         Util_FreeRecvQMsg(recvMsg);
     if (msgPlain) 
         Free(msgPlain);
+}
+
+void
+ServerWorker::_FlushUnregisteredClients(evutil_socket_t Fd, short Ev, void* Arg) {
+    (void)Fd; (void)Ev;
+    ServerWorker *worker = (ServerWorker*)Arg;
+    time_t now = time(NULL);
+
+    pthread_spin_lock(&worker->Lock);
+    auto it = worker->ClientMap.begin();
+    while (it != worker->ClientMap.end()) {
+        S_CLIENT_NODE *node = it->second;
+        if (node->RegisterCtx.Status != SCMsg::SC_MSG_TYPE_REGISTER_FINISH &&
+            now - node->ConnectTime > 60) {
+            int fd = it->first;
+            ++it;
+            worker->EraseClient_NL(fd);
+        } else {
+            ++it;
+        }
+    }
+    pthread_spin_unlock(&worker->Lock);
 }
 
 void
@@ -275,6 +297,7 @@ ServerWorker::ServerAccept(void) {
     clientNode->RecvEvent->events = EPOLLIN;        //we do not use EPOLLET here
     clientNode->RecvEvent->data.fd = clientFd;
     clientNode->RegisterCtx.Status = 0;
+    clientNode->ConnectTime = time(NULL);
     epoll_ctl(EpollFd, EPOLL_CTL_ADD, clientFd, clientNode->RecvEvent);
     
     pthread_spin_lock(&Lock);
@@ -366,6 +389,7 @@ ServerWorker::ServerWorker() {
     MemId = UTIL_MEM_MODULE_INVALID_ID;
     EpollFd = -1;
     MsgHandler = NULL;
+    FlushTimer = NULL;
     ClientCurrentNum.store(0);
 }
 
@@ -437,6 +461,11 @@ ERR_T ServerWorker::Init(S_WORKER_INIT_PARAM InInitParam) {
         LogErr("Init event base for %s failed! ret %d", InitParam.Name.c_str(), ret);
         goto InitErr;
     }
+    ret = Util_TimerAdd(_FlushUnregisteredClients, 30 * 1000, (void*)this, UTIL_TIMER_TYPE_LOOP, TRUE, &FlushTimer);
+    if (ret) {
+        LogErr("Add flush timer for %s failed! ret %d", InitParam.Name.c_str(), ret);
+        goto InitErr;
+    }
     
     goto CommonReturn;
 
@@ -459,6 +488,10 @@ void ServerWorker::Exit() {
         if (MsgHandler) {
             delete MsgHandler;
             MsgHandler = NULL;
+        }
+        if (FlushTimer) {
+            Util_TimerDel(&FlushTimer);
+            FlushTimer = NULL;
         }
         pthread_spin_lock(&Lock);
         for (auto it = ClientMap.begin(); it != ClientMap.end(); ) {

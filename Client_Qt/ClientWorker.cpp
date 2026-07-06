@@ -1,6 +1,7 @@
 #include <curl/curl.h>
 
-#include "SCMsg.pb.h"
+#include <cstdint>
+#include "SCMsg.h"
 #include "ClientWorker.h"
 #include "UtilsCommonUtil.h"
 #include "ClientMsgBussiness.h"
@@ -102,7 +103,6 @@ ERR_T ClientWorker::RegisterToServer(void) {
     ERR_T ret = SUCCESS;
     SCMsg::MsgPayload msgPayload;
     UTIL_Q_MSG *qMsg = NULL;
-    std::string serializedData;
     // init payload
     MsgHandler->ProtoInitMsg(this, msgPayload);
     // check register send
@@ -113,24 +113,25 @@ ERR_T ClientWorker::RegisterToServer(void) {
         goto CommRet;
     }
     // create registerproto
-    MsgHandler->CreateRegisterProtoMsg(this, *msgPayload.mutable_msgbase());
+    MsgHandler->CreateRegisterProtoMsg(this, msgPayload.msgBase);
     // msg pre send
     MsgHandler->ProtoPreSend(msgPayload);
     // send msg
-    serializedData = msgPayload.SerializeAsString();
-    qMsg = Util_NewSendQMsg(serializedData.size());
+    uint8_t encodeBuf[8192];
+    size_t encodedSize = SCMsg::MsgPayloadEncodeToBuf(msgPayload, encodeBuf, sizeof(encodeBuf));
+    qMsg = Util_NewSendQMsg(encodedSize);
     if (!qMsg) {
         ret = -ENOMEM;
         LogErr("Get msg mem failed!");
         goto CommRet;
     }
-    memcpy(qMsg->Cont.VarLenCont, serializedData.data(), serializedData.size());
+    memcpy(qMsg->Cont.VarLenCont, encodeBuf, encodedSize);
     ret = Util_SendQMsg(WorkerFd, qMsg);
     if (ret < SUCCESS) {
         LogErr("send msg failed! ret %d", ret);
         goto CommRet;
     }
-    LogInfo("Send Msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Send Msg: %s", SCMsg::MsgPayloadToString(msgPayload).c_str());
     RegisterRetried ++;
 
 CommRet:
@@ -196,11 +197,11 @@ void ClientWorker::_RecvMsg(evutil_socket_t Fd, short Event, void *Arg) {
         worker->State = C_WORKER_STATS_DISCONNECTED;
         goto CommRet;
     }
-    if (!msgPayload.ParseFromArray(recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
+    if (!SCMsg::MsgPayloadDecodeFromBuf(msgPayload, (uint8_t*)recvMsg->Cont.VarLenCont, recvMsg->Head.ContentLen)) {
         LogErr("parse form array failed!");
         goto CommRet;
     }
-    LogInfo("Recv msg: %s", msgPayload.ShortDebugString().c_str());
+    LogInfo("Recv msg: %s", SCMsg::MsgPayloadToString(msgPayload).c_str());
     ret = worker->MsgHandler->DispatchMsg(worker, msgPayload);
     if (ret < 0) {
         LogErr("dispatch msg failed! ret %d", ret);
@@ -388,6 +389,47 @@ void ClientWorker::Exit(void) {
         }
         State = C_WORKER_STATS_EXIT;
     }
+}
+
+ERR_T ClientWorker::SendMsg(uint32_t ClientId, std::string Msg) {
+    SCMsg::MsgPayload sendMsgPayload;
+    ERR_T ret = SUCCESS;
+    uint8_t msgpackBuf[4096];
+    size_t msgpackLen = 0;
+    UTIL_Q_MSG *sendMsg = NULL;
+
+    if (State < C_WORKER_STATS_REGISTERED) {
+        LogErr("Not registered, cannot send");
+        ret = -EPERM;
+        goto CommRet;
+    }
+
+    MsgHandler->ProtoInitMsg(this, sendMsgPayload);
+    sendMsgPayload.msgBase.msgType = SCMsg::SC_MSG_TYPE_MSG_TRANS_C_2_S;
+    sendMsgPayload.msgBase.transMsg.from.clientId = InitParam.ClientId;
+    sendMsgPayload.msgBase.transMsg.to.clientId = ClientId;
+    sendMsgPayload.msgBase.transMsg.msg = Msg;
+    MsgHandler->ProtoPreSend(sendMsgPayload);
+    msgpackLen = SCMsg::MsgPayloadEncodeToBuf(sendMsgPayload, msgpackBuf, sizeof(msgpackBuf));
+    sendMsg = Util_NewSendQMsg(msgpackLen);
+    if (!sendMsg) {
+        ret = -ENOMEM;
+        LogErr("Get msg mem failed!");
+        goto CommRet;
+    }
+    memcpy(sendMsg->Cont.VarLenCont, msgpackBuf, msgpackLen);
+    ret = Util_SendQMsg(WorkerFd, sendMsg);
+    if (ret < SUCCESS) {
+        LogErr("send msg failed! ret %d", ret);
+        goto CommRet;
+    }
+    LogInfo("Send Msg: %s", SCMsg::MsgPayloadToString(sendMsgPayload).c_str());
+
+CommRet:
+    if (sendMsg)
+        Util_FreeSendQMsg(sendMsg);
+    MsgHandler->ProtoRelease(sendMsgPayload);
+    return ret;
 }
 
 ClientWorker::ClientWorker() :

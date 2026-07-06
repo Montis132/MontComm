@@ -10,3 +10,6 @@
 [submodule "third_party/GmSSL-Java"]
 	path = third_party/GmSSL-Java
 	url = https://github.com/GmSSL/GmSSL-Java.git
+[submodule "third_party/msgpack"]
+	path = third_party/msgpack
+	url = https://github.com/msgpack/msgpack.git
