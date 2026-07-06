@@ -36,6 +36,7 @@
 Server/src/build/*
 utils/build/*
 third_party/*/build/*
+third_party/msgpack/*
 .vscode/*
 SCShare/build/*
 Client/src/build/*
