@@ -36,8 +36,8 @@ else ()
     add_library(${PROJECT_NAME} STATIC ${SOURCES})
 endif ()
 target_compile_options(${PROJECT_NAME} PRIVATE -g -O0)
-add_subdirectory(${THIRD_PARTY_ROOT}/msgpack ${CMAKE_BINARY_DIR}/msgpack-c)
-target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto msgpack-c)
+find_library(MSGPACKC_LIBRARY NAMES msgpackc PATHS ${THIRD_PARTY_ROOT}/msgpack/cpp/build/lib NO_DEFAULT_PATH)
+target_link_libraries(${PROJECT_NAME} PRIVATE OpenSSL::SSL OpenSSL::Crypto ${MSGPACKC_LIBRARY})
 set_target_properties(${PROJECT_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )

@@ -61,15 +61,15 @@ find_library(GMSSL_LIBRARY NAMES gmssl PATHS ${THIRD_PARTY_ROOT}/GmSSL/build/bin
 # dynamic link others
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_CMAKE_FIND_LIBRARY_SUFFIXES})
 ## link 
-add_subdirectory(${THIRD_PARTY_ROOT}/msgpack ${CMAKE_BINARY_DIR}/msgpack-c)
+find_library(MSGPACKC_LIBRARY NAMES msgpackc PATHS ${THIRD_PARTY_ROOT}/msgpack/cpp/build/lib NO_DEFAULT_PATH)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE 
     ${SCSHARE_LIBRARY} 
 	${UTILS_LIBRARY} 
 	${EVENT_LIBRARY} 
 	${GMSSL_LIBRARY}
+	${MSGPACKC_LIBRARY}
 	Threads::Threads
     OpenSSL::SSL
     OpenSSL::Crypto
-    msgpack-c
 )
