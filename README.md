@@ -1,4 +1,4 @@
-# QinXComm
+# MontComm
 Secure communication and remote management
 
 ## 项目架构及功能说明
@@ -40,7 +40,14 @@ Client出于安全考虑，一般部署在局域网，提供以下服务：
 4. 注册后，并且添加互通域后，可以向指定Client发送消息
 5. 对Server集群可以自动切换，在当前的Server连接出问题时，自动切换集群中其他备机
 
-#### 4. 数据库服务
+#### 4. Client_Qt
+
+基于Qt框架的Client图形界面客户端，提供：
+1. 与C++ Client相同的核心通信功能（注册、消息收发、SM4加密）
+2. 基于QMainWindow的图形界面，支持消息展示和交互操作
+3. 通过Client_Qt.pro qmake工程管理构建
+
+#### 5. 数据库服务
 
 数据库出于安全考虑，部署在私网，提供服务：
 
@@ -162,14 +169,14 @@ Apache Maven 3.6.3
 
 ### 1. 克隆代码仓
 
-git clone --recursive  https://github.com/QinX132/Comm.git (--recursive 克隆所有子模块的代码仓)
+git clone --recursive https://github.com/Montis132/MontComm.git (--recursive 克隆所有子模块的代码仓)
 
 ### 2. 构建
 
 ```sh
-cd Comm
+cd MontComm
 
-./build -a
+./build.sh -a
 ```
 
 ### 3. （选读）单独模块构建
@@ -185,6 +192,12 @@ cd Comm
 > ​	path = third_party/GmSSL
 >
 > ​	url = https://github.com/guanzhi/GmSSL.git (commit:6de0e022)
+>
+> [submodule "third_party/GmSSL-Java"]
+>
+> ​	path = third_party/GmSSL-Java
+>
+> ​	url = https://github.com/GmSSL/GmSSL-Java.git
 >
 > [submodule "third_party/json"]
 >
@@ -227,9 +240,43 @@ make && make test
 
 在工程目录执行./build -S ，将会自动进入SCShare，执行 scshare_build.sh脚本，将此代码仓的文件编译为.a文件。该仓使用msgpack进行消息序列化。
 
-#### Ⅳ 构建 Server、Client 服务
+#### Ⅳ 构建 Server-Client 消息共享仓 MSShare
+
+在工程目录执行：
+
+```sh
+cd MSShare && ./msshare_build.sh
+```
+
+MSShare 包含了 Server 和 Client 之间消息通信的消息头定义（MSMsg.h），使用msgpack-c API进行序列化/反序列化。
+
+#### Ⅴ 构建 Server、Client 服务
 
 在工程目录执行./build -sc ，将会自动进入Server、Client，执行脚本，编译。生成可执行文件Server/src/build/Server、 Client/src/build/Client。
+
+#### Ⅵ 构建 Client_Qt 图形界面客户端
+
+Client_Qt 是基于Qt框架的Client图形界面客户端，使用qmake构建：
+
+```sh
+cd Client_Qt
+qmake Client_Qt.pro
+make
+```
+
+依赖：Qt5（Widgets、Network模块）、GmSSL、msgpack-c、libevent。
+
+#### Ⅶ 构建 utils-jni Java JNI 桥接库
+
+utils-jni 封装了 utils C 库的 Java JNI 接口，使用 Maven 构建：
+
+```sh
+cd utils-jni
+export JAVA_HOME=/usr/lib/jvm/java-17-oracle
+mvn compile && mvn package
+```
+
+生成 jar 包供 CommMngr 后端调用，实现 Java 层对 utils C 安全、日志等功能的使用。
 
 # RoadMap
 
@@ -305,7 +352,7 @@ util组件是作者用c语言开发的使用工具仓，旨在为上层应用提
   * 提供gmssl sm3 cbc算法加密/解密接口√
 * 为每一个模块提供单元测试UnitTest，覆盖基本功能验证√
 * 对外提供个性化初始化接口，包括自定义参数以及自定义模块√
-* 为java提供utiljni服务 ×
+* 为java提供utiljni服务（utils-jni） √
 
 ### Server
 
@@ -327,4 +374,4 @@ util组件是作者用c语言开发的使用工具仓，旨在为上层应用提
 * 增加Server注册失败自动重试状态机√
 * 引入SM4加解密√
 * 从CommMngr获取Server相关信息×
-* 为主流客户端提供图形化界面（via Qt）×
+* 为主流客户端提供图形化界面（via Qt，Client_Qt） √
