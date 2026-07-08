@@ -40,3 +40,8 @@ third_party/msgpack/*
 .vscode/*
 SCShare/build/*
 Client/src/build/*
+
+# Generated SM2 key files (runtime)
+*_SM2_Pri.pem
+*_SM2_Pub.pem
+dependency-reduced-pom.xml

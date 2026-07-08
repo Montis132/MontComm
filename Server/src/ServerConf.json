@@ -2,7 +2,7 @@
     "ServerWorkerConf": [
         {
             "Load": 1024,
-            "Port": 13231,
+            "Port": 13431,
             "WorkPath": "./worker1",
             "Sm2PriPwd": "Server"
         },
@@ -14,8 +14,8 @@
         }
     ],
     "MngrClientConf": {
-        "ServerAddr": "192.168.137.101:14001",
-        "TrustCert111" : "/home/yuzb/yuzb/tmp/CommMngr.crt"
+        "ServerAddr": "127.0.0.1:14001",
+        "TrustCert" : "/tmp/CommMngr.crt"
     },
     "UtilConf" : {
         "CmdLineInit": true,

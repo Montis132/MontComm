@@ -183,7 +183,17 @@ cd MontComm
 
 #### Ⅰ 三方仓构建
 
-在工程目录执行./build -t ，将会自动进入third_party，执行third_party_build_all.sh脚本，构建gmssl()、libevent库（优先构建静态库）
+在工程目录执行./build.sh -t ，将会自动进入third_party，执行third_party_build_all.sh脚本，构建GmSSL（SM2/SM3/SM4国密算法）、libevent（事件驱动I/O）和msgpack-c（消息序列化），优先构建静态库。
+
+注意：GmSSL-Java JNI 需要 GmSSL 动态库支持，若需构建 CommMngr 后端，还需单独以共享库模式构建 GmSSL：
+
+```sh
+cd third_party/GmSSL
+rm -rf build && mkdir build && pushd build
+cmake -DBUILD_SHARED_LIBS=ON ..
+make -j$(nproc) && sudo make install
+sudo ldconfig
+```
 
 三方库依赖以及其版本：
 
@@ -220,7 +230,7 @@ cd MontComm
 
 #### Ⅱ 构建utils代码仓：
 
-在工程目录执行./build -u ，将会自动进入utils，执行 utils_build.sh脚本，编译所有.c文件，并且将此代码仓的文件编译为.a文件。此代码仓包含了一些c语言编写的模块功能，包括安全管理模块、健康检查模块、日志模块、内存管理模块、命令行模块、线程池模块、定时器模块、网络消息模块、作者自己编写的双向循环链表，以及一些常用的api。（相关的模块说明待开发者补充）
+在工程目录执行./build.sh -u ，将会自动进入utils，执行 utils_build.sh脚本，编译所有.c文件，并且将此代码仓的文件编译为.a文件。此代码仓包含了一些c语言编写的模块功能，包括安全管理模块、健康检查模块、日志模块、内存管理模块、命令行模块、线程池模块、定时器模块、网络消息模块、作者自己编写的双向循环链表，以及一些常用的api。（相关的模块说明待开发者补充）
 
 该目录内置unittest，如果要执行单元测试，执行如下操作：
 
@@ -238,7 +248,7 @@ make && make test
 
 #### Ⅲ 构建Server 、 Client 代码共享仓
 
-在工程目录执行./build -S ，将会自动进入SCShare，执行 scshare_build.sh脚本，将此代码仓的文件编译为.a文件。该仓使用msgpack进行消息序列化。
+在工程目录执行./build.sh -S ，将会自动进入SCShare，执行 scshare_build.sh脚本，将此代码仓的文件编译为.a文件。该仓使用msgpack进行消息序列化。
 
 #### Ⅳ 构建 Server-Client 消息共享仓 MSShare
 
@@ -252,7 +262,7 @@ MSShare 包含了 Server 和 Client 之间消息通信的消息头定义（MSMsg
 
 #### Ⅴ 构建 Server、Client 服务
 
-在工程目录执行./build -sc ，将会自动进入Server、Client，执行脚本，编译。生成可执行文件Server/src/build/Server、 Client/src/build/Client。
+在工程目录执行./build.sh -sc ，将会自动进入Server、Client，执行脚本，编译。生成可执行文件Server/src/build/Server、 Client/src/build/Client。
 
 #### Ⅵ 构建 Client_Qt 图形界面客户端
 
@@ -277,6 +287,59 @@ mvn compile && mvn package
 ```
 
 生成 jar 包供 CommMngr 后端调用，实现 Java 层对 utils C 安全、日志等功能的使用。
+
+## 运行说明
+
+### 前置服务
+
+运行前需确保以下基础服务可用：
+
+| 服务 | 默认地址 | 用途 |
+|------|---------|------|
+| Redis | `127.0.0.1:6379` | Server 健康数据缓存 |
+| MongoDB | `127.0.0.1:27017` | 身份/互通域持久化存储 |
+| CommMngr 后端 | `127.0.0.1:14001`(SSL Worker), `127.0.0.1:14000`(HTTP API) | 管理中心 |
+
+### 启动 CommMngr
+
+```sh
+# 构建并启动后端
+cd CommMngr/src/backEnd/CommMngr
+mvn compile && mvn package -DskipTests
+export LD_LIBRARY_PATH=/usr/local/lib  # GmSSL动态库路径
+sudo -E java -jar target/CommMngr-1.0.0.jar
+
+# 构建并部署前端
+cd CommMngr/src/frontEnd/qxcommmanager
+npm install
+npm run build
+# dist/ 部署至 nginx 或直接使用 dev server
+```
+
+### 启动 Server
+
+Server 需从源码目录运行（配置文件 `ServerConf.json` 路径硬编码为当前目录），且须使用 `start` 命令启动：
+
+```sh
+cd Server/src
+sudo LD_LIBRARY_PATH=/usr/local/lib ./build/Server start
+```
+
+### 启动 Client
+
+```sh
+cd Client/src
+sudo LD_LIBRARY_PATH=/usr/local/lib ./build/Client start
+```
+
+### 端口说明
+
+| 组件 | 端口 | 说明 |
+|------|------|------|
+| CommMngr HTTP API | 14000 | 前端 REST API |
+| CommMngr Worker | 14001 | SSL/TLS Server 管理连接 |
+| Server Worker 1 | 13431 | Client 连接端口（可在配置中修改） |
+| Server Worker 2 | 13432 | Client 连接端口（可在配置中修改） |
 
 # RoadMap
 
